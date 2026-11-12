@@ -1,8 +1,10 @@
 # Last Light
 
-A 5-minute survival game made in Godot 4.7. Ten pilgrims wake on a floating garden
-island as the sun sets. Your lantern is your health: gather glowing blooms, fend off
-light-eating Hollows, and step through the Sun Gate with 80% light before the sun is gone.
+A 5-minute survival game made in Godot 4.7. Ten pilgrims race across floating garden
+islands as the sun sets, leaping between stepping stones over the Underglow, a glowing
+abyss. Your lantern is your health: grab glowing blooms, race rivals to falling
+Sunflares, shove them off the stones, survive the Hollows and the Devourer, and step
+through the Sun Gate with 80% light before the sun is gone.
 
 ## Download
 - **Latest builds:** open the [Actions](../../actions) tab, pick the newest
@@ -18,10 +20,13 @@ Android: install `LastLight-android.apk` (allow installs from unknown sources).
 |---|---|---|
 | Move | WASD | Drag on the left side |
 | Look | Mouse | Drag on the right side |
-| Sprint | Shift | RUN |
-| Flare (push hollows back) | Space / Q | FLARE |
+| Jump | Space | JUMP |
+| Sprint | Shift | Push the stick all the way |
+| Push a rival | E | PUSH |
+| Flare (blast hollows and rivals back) | Q / middle-click | FLARE |
 | Hit with a tool | Left-click | HIT |
 | Brace (70%+ light) | Right-click | BRACE |
+| Skip the gate flyover | Any key | Tap |
 | Autopilot | P | WATCH AI on the title screen |
 
 Start in **Gentle** mode for your first game.
@@ -30,6 +35,8 @@ Start in **Gentle** mode for your first game.
 - Open the project in Godot 4.7.2 and press F5.
 - All tuning numbers are in `scripts/cfg.gd`; the design is in `DESIGN.md`.
 - Balance check: `python tools/balance_sim.py 16 --jobs 8` (edit the Godot path inside first).
+- Debug views: `-- --overview`, `-- --bridgeview=6`, `-- --wyrmtest`, `-- --demohollow`,
+  `-- --navtest` (prints every bridge's stone heights and checks paths to the gate).
 - Sounds are synthesized by `scripts/audio.gd`. Re-bake them with
   `godot --headless --path . -- --bake-audio`.
 - `ci/android-debug.keystore` is a **debug** signing key (password `android`) so that

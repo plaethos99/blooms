@@ -4,13 +4,15 @@ extends Node
 ## recording later, put any AudioStream into `bank` under the same name.
 
 const RATE := 22050
-const AMB := ["wind", "pad", "night", "pulse"]
+const AMB := ["wind", "pad", "night", "pulse", "drive"]
 const BAKE_DIR := "res://audio/"
 const SOUND_NAMES := [
 	"wind", "pad", "night", "pulse", "chime0", "chime1", "chime2", "chime3", "chime4",
 	"hollow_loop", "hollow_form", "bite", "hit", "swing", "hollow_die", "flare", "bloom",
 	"shard", "tool", "brace", "hurt", "gate_open", "escape", "lantern_out", "heart",
 	"tick", "step", "deny", "toll",
+	"jump", "swish", "shove", "fall", "screech", "hiss", "roar", "wyrm_burst", "drop_warn",
+	"drop_impact", "flare_get", "drum", "go", "water", "drive",
 ]
 
 var bank := {}
@@ -114,6 +116,18 @@ func _on_bank_ready() -> void:
 		amb[n] = a
 		amb_level[n] = 0.0
 	heart.stream = bank["heart"]
+	# Every waterfall roars softly where it pours off its island.
+	if main and main.world:
+		for lip in main.world.waterfalls:
+			var w := AudioStreamPlayer3D.new()
+			w.stream = bank["water"]
+			w.bus = "Ambience"
+			w.unit_size = 5.0
+			w.max_distance = 45.0
+			w.volume_db = -4.0
+			add_child(w)
+			w.global_position = lip - Vector3(0, 2.0, 0)
+			w.play(randf() * 3.0)
 
 
 # ---------------------------------------------------------------- playback API
@@ -171,13 +185,26 @@ func _process(delta: float) -> void:
 		"pad": 0.42 * (1.0 - night) + 0.04,
 		"night": 0.55 * night,
 		"pulse": 0.65 if (main.final_phase and st == "playing") else 0.0,
+		"drive": 0.0,
 	}
+	if st == "playing" or st == "countdown":
+		# A driving rhythm under the whole match that swells when things get hairy.
+		var hot := 0.0
+		if not main.drops.is_empty():
+			hot += 0.15
+		if main.wyrm and main.wyrm.is_threatening():
+			hot += 0.25
+		var p0 = main.player
+		if p0 and p0.alive and main.nearest_hollow(p0.global_position, 12.0) != null:
+			hot += 0.15
+		target["drive"] = clampf(0.2 + 0.2 * f + hot, 0.0, 0.7)
 	if st == "ended":
-		target = {"wind": 0.6, "pad": 0.0, "night": 0.3, "pulse": 0.0}
+		target = {"wind": 0.6, "pad": 0.0, "night": 0.3, "pulse": 0.0, "drive": 0.0}
 	if not music_on:
 		target["pad"] = 0.0
 		target["night"] = 0.0
 		target["pulse"] = 0.0
+		target["drive"] = 0.0
 	for k in AMB:
 		amb_level[k] = move_toward(float(amb_level[k]), float(target[k]), delta * 0.35)
 		amb[k].volume_db = linear_to_db(maxf(float(amb_level[k]), 0.0001))
@@ -188,8 +215,9 @@ func _process(delta: float) -> void:
 		chime_t = randf_range(2.5, 7.0) + night * 8.0
 		if night < 0.85 and st != "ended":
 			var a := randf() * TAU
-			var r := randf_range(6.0, 34.0)
-			play("chime%d" % (randi() % 5), Vector3(cos(a) * r, 4.0, sin(a) * r), -6.0 - night * 8.0)
+			var r := randf_range(6.0, 30.0)
+			var c: Vector3 = main.player.global_position if main.player else Vector3.ZERO
+			play("chime%d" % (randi() % 5), c + Vector3(cos(a) * r, 4.0, sin(a) * r), -6.0 - night * 8.0)
 
 	# Heartbeat when the player's lantern is fading.
 	var p = main.player
@@ -249,6 +277,38 @@ func _build_bank() -> void:
 	b["step"] = _wav(_norm(_noise(_buf(0.15), 0.0, 0.13, 1.0, 0.02, 0.25, 1), 0.4))
 	b["deny"] = _wav(_norm(_sweep(_sweep(_buf(0.7), 0.0, 0.6, 140.0, 120.0, 0.5, 0), 0.0, 0.6, 148.0, 127.0, 0.5, 0), 0.6))
 	b["toll"] = _wav(_norm(_bell(_bell(_buf(4.0), 0.0, 196.0, 0.6, 1.1, 5), 0.0, 98.0, 0.4, 1.4, 3), 0.7))
+	b["jump"] = _wav(_norm(_noise(_sweep(_buf(0.22), 0.0, 0.14, 170.0, 420.0, 0.6, 1), 0.0, 0.18, 0.5, 0.05, 0.3, 1), 0.5))
+	b["swish"] = _wav(_norm(_noise(_buf(0.28), 0.0, 0.26, 1.0, 0.05, 0.1, 2, 0.5), 0.45))
+	b["shove"] = _wav(_norm(_noise(_sweep(_buf(0.3), 0.0, 0.22, 130.0, 55.0, 1.0, 1), 0.0, 0.08, 0.8, 0.05, 0.5, 1), 0.85))
+	b["fall"] = _wav(_fall())
+	b["screech"] = _wav(_screech())
+	b["hiss"] = _wav(_norm(_noise(_buf(0.5), 0.0, 0.45, 1.0, 0.3, 0.9, 3), 0.55))
+	b["roar"] = _wav(_roar())
+	var wb := _noise(_buf(1.8), 0.0, 1.6, 1.0, 0.004, 0.05, 2, 0.5)
+	wb = _sweep(wb, 0.0, 1.4, 85.0, 32.0, 0.8, 0)
+	b["wyrm_burst"] = _wav(_norm(wb, 0.85))
+	var dw := _buf(1.6)
+	for i in 3:
+		dw = _sweep(dw, i * 0.42, 0.34, 700.0, 1500.0, 0.45, 2)
+		dw = _bell(dw, i * 0.42 + 0.3, 1568.0, 0.25, 0.15, 3)
+	b["drop_warn"] = _wav(_norm(dw, 0.6))
+	var di := _sweep(_buf(2.2), 0.0, 1.6, 95.0, 28.0, 1.0, 1)
+	di = _noise(di, 0.0, 0.9, 0.9, 0.01, 0.35, 1)
+	di = _bell(di, 0.0, 220.0, 0.25, 0.6, 4)
+	b["drop_impact"] = _wav(_norm(di, 0.9))
+	var fg := _buf(1.2)
+	for i in 4:
+		fg = _bell(fg, i * 0.06, [784.0, 1046.5, 1318.5, 1568.0][i], 0.3, 0.35, 4)
+	fg = _noise(fg, 0.0, 0.5, 0.25, 0.2, 0.8, 1)
+	b["flare_get"] = _wav(_norm(fg, 0.65))
+	b["drum"] = _wav(_norm(_noise(_sweep(_buf(0.7), 0.0, 0.55, 150.0, 52.0, 1.0, 1), 0.0, 0.05, 0.5, 0.1, 0.6, 1), 0.85))
+	var go := _sweep(_buf(1.8), 0.0, 0.6, 160.0, 48.0, 1.0, 1)
+	go = _noise(go, 0.0, 0.9, 0.6, 0.02, 0.4, 2, 0.05)
+	for f in [392.0, 523.25, 659.25, 783.99]:
+		go = _bell(go, 0.05, f, 0.22, 0.5, 4)
+	b["go"] = _wav(_norm(go, 0.8))
+	b["water"] = _wav(_water(), true)
+	b["drive"] = _wav(_drive(), true)
 	_built = b
 
 
@@ -448,3 +508,73 @@ func _choir() -> PackedFloat32Array:
 		s[i] = v * e
 	s = _bell(s, 0.0, 130.81, 2.0, 1.2, 5)
 	return _norm(s, 0.7)
+
+
+func _fall() -> PackedFloat32Array:
+	var s := _buf(1.9)
+	var ph := 0.0
+	for i in s.size():
+		var t := float(i) / RATE
+		var k := t / 1.9
+		var f := lerpf(820.0, 170.0, pow(k, 0.7)) * (1.0 + 0.03 * sin(TAU * 6.0 * t))
+		ph += TAU * f / RATE
+		s[i] = (sin(ph) + 0.3 * sin(ph * 2.0)) * (1.0 - k) * minf(1.0, t * 30.0) * 0.6
+	s = _noise(s, 0.0, 1.9, 0.5, 0.005, 0.06, 3)
+	return _norm(s, 0.7)
+
+
+func _screech() -> PackedFloat32Array:
+	var s := _buf(1.0)
+	var ph := 0.0
+	var ph2 := 0.0
+	for i in s.size():
+		var t := float(i) / RATE
+		var k := t / 1.0
+		var f := lerpf(1500.0, 620.0, k) + 90.0 * sin(TAU * 31.0 * t)
+		ph += TAU * f / RATE
+		ph2 += TAU * f * 1.507 / RATE
+		var env := minf(1.0, t * 40.0) * pow(1.0 - k, 1.5)
+		s[i] = tanh(3.0 * (sin(ph) + 0.6 * sin(ph2))) * env * 0.5
+	s = _noise(s, 0.0, 0.9, 0.6, 0.25, 0.9, 1)
+	return _norm(s, 0.7)
+
+
+func _roar() -> PackedFloat32Array:
+	var s := _buf(3.0)
+	var ph := 0.0
+	var a := 0.0
+	var b := 0.0
+	for i in s.size():
+		var t := float(i) / RATE
+		var env := minf(1.0, t / 0.4) * clampf((3.0 - t) / 1.4, 0.0, 1.0)
+		var f := 42.0 + 14.0 * sin(TAU * 0.6 * t) + 6.0 * sin(TAU * 7.0 * t)
+		ph += TAU * f / RATE
+		var rumble := 0.6 + 0.4 * sin(TAU * 9.0 * t)
+		a += 0.08 * (randf() * 2.0 - 1.0 - a)
+		b += 0.01 * (a - b)
+		s[i] = (tanh(4.0 * (sin(ph) + 0.5 * sin(ph * 2.02) + 0.3 * sin(ph * 3.1))) * 0.6 * rumble + (a - b) * 2.5) * env
+	return _norm(s, 0.9)
+
+
+func _water() -> PackedFloat32Array:
+	var s := _buf(5.0)
+	var a := 0.0
+	var b := 0.0
+	for i in s.size():
+		var t := float(i) / RATE
+		a += 0.35 * (randf() * 2.0 - 1.0 - a)
+		b += 0.02 * (a - b)
+		s[i] = (a - b) * (0.85 + 0.15 * sin(TAU * t * 0.8))
+	return _loopify(_norm(s, 0.5), RATE)
+
+
+## Two seconds of rhythm at 120 bpm: kick, toms and a shaker.
+func _drive() -> PackedFloat32Array:
+	var s := _buf(2.0)
+	for beat in [0.0, 0.5, 1.0, 1.5]:
+		s = _sweep(s, beat, 0.32, 95.0, 42.0, 0.9, 1)
+	for tom in [0.75, 1.25, 1.75]:
+		s = _sweep(s, tom, 0.22, 170.0, 95.0, 0.45, 1)
+	for k in 16:
+		s = _noise(s, k * 0.125, 0.06, 0.12 if k % 2 == 0 else 0.07, 0.4, 0.95, 1)
+	return _norm(s, 0.6)

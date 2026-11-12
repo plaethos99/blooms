@@ -4,6 +4,7 @@ extends CanvasLayer
 const Cfg = preload("res://scripts/cfg.gd")
 const LightMeter = preload("res://scripts/light_meter.gd")
 const Indicator = preload("res://scripts/indicator.gd")
+const Minimap = preload("res://scripts/minimap.gd")
 
 const VIGNETTE_SHADER := """
 shader_type canvas_item;
@@ -56,6 +57,13 @@ var play_t := 0.0
 var obj_target = null
 var obj_label := ""
 var obj_col := Color(1.0, 0.9, 0.6)
+var minimap
+var alert_lbl: Label
+var alert_t := 0.0
+var count_lbl: Label
+var count_t := 0.0
+var caption: Control
+var _caption_on := false
 
 
 func setup(m) -> void:
@@ -104,6 +112,11 @@ func setup(m) -> void:
 	objective = _label("", 20, Color(1.0, 0.9, 0.6))
 	objective.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	opanel.add_child(objective)
+	# Big urgent line under the objective: incoming Sunflares, the Devourer.
+	alert_lbl = _label("", 26, Color(1.0, 0.65, 0.25))
+	alert_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	alert_lbl.modulate.a = 0.0
+	top.add_child(alert_lbl)
 
 	var panel := PanelContainer.new()
 	panel.add_theme_stylebox_override("panel", _panel_style())
@@ -152,6 +165,8 @@ func setup(m) -> void:
 	root.add_child(tip_panel)
 	tip_lbl = _label("", 18, Color(0.85, 0.95, 1.0))
 	tip_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	tip_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	tip_lbl.custom_minimum_size = Vector2(720, 0)
 	tip_panel.add_child(tip_lbl)
 
 	feed_box = VBoxContainer.new()
@@ -161,15 +176,27 @@ func setup(m) -> void:
 	feed_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(feed_box)
 
+	var rcol := VBoxContainer.new()
+	rcol.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	rcol.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	rcol.offset_right = -18
+	rcol.offset_left = -18
+	rcol.offset_top = 18
+	rcol.alignment = BoxContainer.ALIGNMENT_BEGIN
+	rcol.add_theme_constant_override("separation", 8)
+	rcol.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(rcol)
+	minimap = Minimap.new()
+	minimap.main = main
+	minimap.size_flags_horizontal = Control.SIZE_SHRINK_END
+	rcol.add_child(minimap)
 	var rpanel := PanelContainer.new()
 	rpanel.add_theme_stylebox_override("panel", _panel_style())
-	rpanel.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	rpanel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	rpanel.offset_right = -18
-	rpanel.offset_left = -18
-	rpanel.offset_top = 18
+	rpanel.size_flags_horizontal = Control.SIZE_SHRINK_END
 	rpanel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(rpanel)
+	rcol.add_child(rpanel)
+	# On phones the buttons need that corner; the map already shows everyone.
+	rpanel.visible = main.touch == null
 	roster = RichTextLabel.new()
 	roster.bbcode_enabled = true
 	roster.fit_content = true
@@ -184,8 +211,8 @@ func setup(m) -> void:
 	banner_lbl.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
 	banner_lbl.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	banner_lbl.grow_vertical = Control.GROW_DIRECTION_BOTH
-	banner_lbl.offset_top = -170
-	banner_lbl.offset_bottom = -170
+	banner_lbl.offset_top = -95
+	banner_lbl.offset_bottom = -95
 	banner_lbl.modulate.a = 0.0
 	root.add_child(banner_lbl)
 
@@ -198,10 +225,19 @@ func setup(m) -> void:
 	toast_lbl.modulate.a = 0.0
 	root.add_child(toast_lbl)
 
+	count_lbl = _label("", 120, Color(1.0, 0.9, 0.6))
+	count_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	count_lbl.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	count_lbl.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	count_lbl.grow_vertical = Control.GROW_DIRECTION_BOTH
+	count_lbl.modulate.a = 0.0
+	root.add_child(count_lbl)
+
+	_build_caption()
 	_build_intro()
 	_build_end()
 	# Gameplay HUD stays hidden behind the title card and fades in when the match starts.
-	game_ui = [top, panel, rpanel]
+	game_ui = [top, panel, rcol]
 	for c in game_ui:
 		c.modulate.a = 0.0
 
@@ -253,30 +289,81 @@ func _center_label(parent: Node, text: String, size: int, col: Color) -> Label:
 	return l
 
 
+func _build_caption() -> void:
+	caption = VBoxContainer.new()
+	caption.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
+	caption.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	caption.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	caption.offset_bottom = -90
+	caption.offset_top = -90
+	caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	caption.modulate.a = 0.0
+	root.add_child(caption)
+	var a := _label("THE SUN GATE", 54, Color(1.0, 0.85, 0.5))
+	a.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	caption.add_child(a)
+	var b := _label("Your only way out. It opens at 01:00. Step through with 80% light.", 22, Color(1.0, 0.95, 0.85))
+	b.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	caption.add_child(b)
+	var c := _label("(%s to skip)" % ("tap" if main.touch else "any key"), 15, Color(0.85, 0.85, 0.9, 0.8))
+	c.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	caption.add_child(c)
+
+
+func flyover_caption(on: bool) -> void:
+	if on == _caption_on:
+		return
+	_caption_on = on
+	create_tween().tween_property(caption, "modulate:a", 1.0 if on else 0.0, 0.6)
+
+
+func show_game_ui() -> void:
+	var tw := create_tween().set_parallel(true)
+	for c in game_ui:
+		tw.tween_property(c, "modulate:a", 1.0, 0.8)
+
+
+func countdown(text: String) -> void:
+	count_lbl.text = text
+	count_t = 0.65 if text != "RUN!" else 1.1
+	count_lbl.pivot_offset = count_lbl.size * 0.5
+	count_lbl.scale = Vector2.ONE * 1.6
+	create_tween().tween_property(count_lbl, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	count_lbl.label_settings.font_color = Color(1.0, 0.55, 0.25) if text == "RUN!" else Color(1.0, 0.92, 0.7)
+
+
+func alert(text: String, col: Color, dur := 3.0) -> void:
+	alert_lbl.text = text
+	alert_lbl.label_settings.font_color = col
+	alert_t = dur
+
+
 func _build_intro() -> void:
 	intro = _overlay(0.42)
 	var vb: Node = intro.get_child(0).get_child(0)
 	_center_label(vb, "LAST LIGHT", 72, Color(1.0, 0.85, 0.55))
-	_center_label(vb, "The sun sets in 5 minutes. Your lantern is your life.", 21, Color(1, 0.92, 0.85))
+	_center_label(vb, "Ten pilgrims. Floating gardens. Five minutes until the sun is gone.", 21, Color(1, 0.92, 0.85))
 	_center_label(vb, " ", 6, Color.WHITE)
 	var steps := [
-		["1", "Walk into PINK BEAMS (blooms) to make your lantern brighter.", Color(1.0, 0.7, 0.85)],
-		["2", "Dark moths (HOLLOWS) drain your light. Run away, or %s to blast them back." % k("flare"), Color(0.8, 0.65, 1.0)],
-		["3", "At 01:00 the SUN GATE opens on the hilltop. Walk in with 80% light to escape.", Color(1.0, 0.85, 0.45)],
+		["1", "Grab PINK BEAMS (blooms) to brighten your lantern. It is your life.", Color(1.0, 0.7, 0.85)],
+		["2", "%s from stone to stone between islands. Fall, and the Underglow takes you." % kc("jump"), Color(0.6, 0.95, 1.0)],
+		["3", "SUNFLARES crash down on the map. Get there first: flares blast hollows AND rivals.", Color(1.0, 0.65, 0.3)],
+		["4", "Hollows hunt you. When stones glow RED, the Devourer is rising. Get off!", Color(1.0, 0.45, 0.45)],
+		["5", "At 01:00 the SUN GATE opens. Step through with 80% light to escape.", Color(1.0, 0.85, 0.45)],
 	]
 	for s in steps:
-		_center_label(vb, "%s.  %s" % [s[0], s[1]], 20, s[2])
+		_center_label(vb, "%s.  %s" % [s[0], s[1]], 19, s[2])
 	_center_label(vb, " ", 6, Color.WHITE)
-	_center_label(vb, "Don't worry about remembering this: the box at the top of the screen always says what to do next.", 16, Color(0.85, 0.95, 1.0))
+	_center_label(vb, "The box at the top always says what to do next, and the map shows where.", 16, Color(0.85, 0.95, 1.0))
 	if main.touch:
-		_center_label(vb, "Left side: drag to move  ·  Right side: drag to look  ·  Buttons: FLARE, HIT (with a tool), BRACE, RUN", 15, Color(1.0, 0.85, 0.6))
-		_center_label(vb, "Gentle: hollows bite you softer, blooms give you more light, your flare recharges faster. Best for your first game.", 15, Color(0.8, 0.9, 1.0))
+		_center_label(vb, "Left side: drag to move (push far to run)  ·  Right side: look  ·  Buttons: JUMP, PUSH, FLARE, HIT, BRACE", 15, Color(1.0, 0.85, 0.6))
+		_center_label(vb, "Gentle: softer bites, bigger blooms, an extra flare, longer warnings. Best for your first game.", 15, Color(0.8, 0.9, 1.0))
 		_center_label(vb, "Tap GENTLE, NORMAL, or WATCH AI below", 22, Color(1.0, 0.95, 0.8))
 		return
-	_center_label(vb, "WASD move  ·  Mouse look  ·  Shift sprint  ·  Space flare  ·  Left-click hit (with a tool)  ·  P autopilot", 15, Color(1.0, 0.85, 0.6))
+	_center_label(vb, "WASD move  ·  Mouse look  ·  Space jump  ·  Shift sprint  ·  E push  ·  Q flare  ·  Left-click hit  ·  Right-click brace", 15, Color(1.0, 0.85, 0.6))
 	_center_label(vb, " ", 10, Color.WHITE)
 	_center_label(vb, "Press 1 for GENTLE (best for your first game)     ·     Click or press 2 for NORMAL", 22, Color(1.0, 0.95, 0.8))
-	_center_label(vb, "Gentle: hollows bite you softer, blooms give you more light, your flare recharges faster. The other pilgrims play normally.", 15, Color(0.8, 0.9, 1.0))
+	_center_label(vb, "Gentle: softer bites, bigger blooms, an extra flare, longer warnings. The other pilgrims play normally.", 15, Color(0.8, 0.9, 1.0))
 	_center_label(vb, "Press P to watch the AI play a round for you (press P again any time to take over)", 16, Color(0.9, 0.9, 0.95))
 
 
@@ -293,9 +380,6 @@ func hide_intro() -> void:
 	var tw := create_tween()
 	tw.tween_property(intro, "modulate:a", 0.0, 0.6)
 	tw.tween_callback(func(): intro.visible = false)
-	var tw2 := create_tween().set_parallel(true)
-	for c in game_ui:
-		tw2.tween_property(c, "modulate:a", 1.0, 0.8)
 
 
 func show_end(title: String, escaped: Array, lost: Array) -> void:
@@ -332,13 +416,17 @@ func k(id: String) -> String:
 	var t: bool = main.touch != null
 	match id:
 		"flare":
-			return "tap FLARE" if t else "press SPACE"
+			return "tap FLARE" if t else "press Q"
+		"jump":
+			return "tap JUMP" if t else "press SPACE"
+		"push":
+			return "tap PUSH" if t else "press E"
 		"hit":
 			return "tap HIT" if t else "left-click"
 		"brace":
 			return "hold BRACE" if t else "hold RIGHT-CLICK"
 		"run":
-			return "hold RUN" if t else "hold SHIFT"
+			return "push the stick all the way" if t else "hold SHIFT"
 		"take":
 			return "Touch the screen to take over" if t else "Press P to take over"
 		"again":
@@ -376,11 +464,15 @@ func _update_tips(delta: float, p) -> void:
 			tip("dim", "TIP: Below 20% you move slower. Get to a pink bloom right away!")
 		if p.tool_swings > 0:
 			tip("tool", "TIP: You picked up a tool. %s when a hollow is close: 2 hits destroy it." % k("hit"))
+		if main.world.bridge_at(pp, 1.5) >= 0 or not main.world.has_ground(pp + p.facing * 2.0, pp.y, 3.0):
+			tip("jump", "TIP: %s to leap stone to stone. Run up to the edge first. Miss, and you fall into the Underglow." % kc("jump"))
+		if play_t > 12.0:
+			tip("push", "TIP: %s to shove a rival. Near an edge, that sends them into the abyss. They can do it to you too!" % kc("push"))
 		if main.world.shrine_protects(pp):
 			tip("shrine", "TIP: You're inside a shrine's gold ring. Hollows can't come in, but the rings shrink as night falls.")
 		var h = main.nearest_hollow(pp, 18.0)
 		if h != null:
-			tip("hollow", "TIP: That dark moth is a HOLLOW. Touching it drains your light. Run, or %s when it's close." % k("flare"))
+			tip("hollow", "TIP: That red-eyed wraith is a HOLLOW. When its eyes blaze it LUNGES. Dodge, or %s to blast it." % k("flare"))
 	tip_t -= delta
 	if tip_t <= 0.0 and not tip_queue.is_empty():
 		tip_lbl.text = tip_queue.pop_front()
@@ -406,13 +498,19 @@ func _compute_objective(p) -> void:
 	var pp: Vector3 = p.global_position
 	var need := int(ceil(Cfg.ESCAPE_LIGHT - p.light))
 	var gate: Vector3 = main.world.gate_pos
+	if main.wyrm_escape_point(pp) != null:
+		obj_col = Color(1.0, 0.35, 0.3)
+		objective.text = "THE STONES ARE GLOWING RED!  GET OFF THIS BRIDGE!"
+		obj_target = main.wyrm_escape_point(pp)
+		obj_label = "SAFE"
+		return
 	var threat = main.nearest_hollow(pp, 8.0)
 	if threat != null:
 		obj_col = Color(0.85, 0.65, 1.0)
 		var sh = main.world.nearest_shrine(pp, 2.5)
 		if p.tool_swings > 0 and p.light >= 30.0:
 			objective.text = "HOLLOW!  Face it and %s to hit it (2 hits)" % k("hit").to_upper()
-		elif p.flare_cd <= 0.0 and p.light > Cfg.FLARE_COST + 1.0:
+		elif p.flares > 0:
 			objective.text = "HOLLOW!  %s to blast it back, then run" % k("flare").to_upper()
 		elif sh != null and pp.distance_to(sh) < 16.0:
 			objective.text = "HOLLOW!  Run into the gold ring, it can't follow"
@@ -441,6 +539,27 @@ func _compute_objective(p) -> void:
 		obj_target = gate
 		obj_label = "SUN GATE"
 		return
+	# A Sunflare falling close by: race for it.
+	if p.flares < Cfg.FLARE_MAX:
+		var best_d = null
+		var bd := 45.0
+		for d in main.drops:
+			if is_instance_valid(d) and pp.distance_to(d.global_position) < bd:
+				bd = pp.distance_to(d.global_position)
+				best_d = d
+		if best_d != null:
+			obj_col = Color(1.0, 0.65, 0.25)
+			objective.text = "SUNFLARE lands in %ds!  Get there first (stay out of the ring)" % int(ceil(best_d.remaining()))
+			obj_target = best_d.global_position
+			obj_label = "SUNFLARE"
+			return
+		var fl = main.nearest_pickup(pp, ["flare"])
+		if fl != null and pp.distance_to(fl.global_position) < 45.0:
+			obj_col = Color(1.0, 0.65, 0.25)
+			objective.text = "Grab the SUNFLARE before someone else does!"
+			obj_target = fl.global_position
+			obj_label = "SUNFLARE"
+			return
 	# Prefer the bloom you can realistically reach first (others are racing too).
 	var bloom = main.best_pickup(p, false)
 	if bloom == null:
@@ -474,6 +593,7 @@ func pulse_clock() -> void:
 func _update_indicators(p) -> void:
 	indicator.threats.clear()
 	indicator.gate = {}
+	indicator.extra.clear()
 	var cam := get_viewport().get_camera_3d()
 	if cam == null or main.state != "playing" or not p.alive or p.escaped:
 		return
@@ -488,6 +608,15 @@ func _update_indicators(p) -> void:
 		if m["edge"]:
 			m["alpha"] = clampf(1.2 - d / 14.0, 0.25, 1.0)
 			indicator.threats.append(m)
+	# Every incoming Sunflare gets a marker too (unless it is already the objective).
+	indicator.extra.clear()
+	for dr in main.drops:
+		if not is_instance_valid(dr) or (obj_label == "SUNFLARE" and obj_target == dr.global_position):
+			continue
+		var g2: Dictionary = indicator.project(cam, dr.global_position + Vector3(0, 2.0, 0), 50.0)
+		g2["col"] = Color(1.0, 0.6, 0.25)
+		g2["text"] = "SUNFLARE %ds  %dm" % [int(ceil(dr.remaining())), int(pp.distance_to(dr.global_position))]
+		indicator.extra.append(g2)
 	if obj_target != null:
 		var tgt: Vector3 = obj_target
 		var g: Dictionary = indicator.project(cam, tgt + Vector3(0, 2.2, 0), 50.0)
@@ -496,7 +625,7 @@ func _update_indicators(p) -> void:
 		if not g["edge"]:
 			# Keep the on-screen marker clear of the clock and objective box at the top.
 			var gp2: Vector2 = g["pos"]
-			g["pos"] = Vector2(gp2.x, maxf(gp2.y, 190.0))
+			g["pos"] = Vector2(gp2.x, maxf(gp2.y, 300.0 if alert_t > 0.0 else 200.0))
 		indicator.gate = g
 
 
@@ -542,10 +671,11 @@ func _process(delta: float) -> void:
 	var on := "[color=#ffe7a8]"
 	var off := "[color=#8a8494]"
 	var tch: bool = main.touch != null
-	var flare_txt: String = (on + ("FLARE ready" if tch else "SPACE flare") + "[/color]") if p.flare_cd <= 0.0 else (off + "flare %ds[/color]" % int(ceil(p.flare_cd)))
+	var flare_txt: String = (on + ("FLARE x%d" if tch else "Q flare x%d") % p.flares + "[/color]") if p.flares > 0 else (off + "no flares[/color]")
+	var push_txt: String = (on + ("PUSH" if tch else "E push") + "[/color]") if p.shove_cd <= 0.0 else (off + "push %ds[/color]" % int(ceil(p.shove_cd)))
 	var tool_txt: String = (on + ("HIT %d/%d" if tch else "CLICK hit %d/%d") % [p.tool_swings, Cfg.TOOL_SWINGS] + "[/color]") if p.tool_swings > 0 else (off + "no tool[/color]")
 	var brace_txt: String = (on + ("BRACE ready" if tch else "R-CLICK brace") + "[/color]") if (light >= Cfg.BRACE_LIGHT and p.brace_ready) else (off + "brace 70%+[/color]")
-	abil.text = "%s     %s     %s" % [flare_txt, tool_txt, brace_txt]
+	abil.text = "%s    %s    %s    %s" % [flare_txt, push_txt, tool_txt, brace_txt]
 	if p.autopilot:
 		abil.text += "\n[color=#a8d8ff]AUTOPILOT is playing for you. %s[/color]" % k("take")
 	elif main.gentle:
@@ -566,6 +696,10 @@ func _process(delta: float) -> void:
 
 	banner_t -= delta
 	banner_lbl.modulate.a = clampf(banner_t, 0.0, 1.0)
+	alert_t -= delta
+	alert_lbl.modulate.a = clampf(alert_t * 2.0, 0.0, 1.0) * (0.75 + 0.25 * sin(play_t * 12.0))
+	count_t -= delta
+	count_lbl.modulate.a = clampf(count_t * 3.0, 0.0, 1.0)
 	toast_t -= delta
 	toast_lbl.modulate.a = clampf(toast_t * 2.0, 0.0, 1.0)
 
@@ -593,7 +727,7 @@ func _update_roster() -> void:
 		if s.escaped:
 			right = "[color=#ffe6a0]escaped[/color]"
 		elif not s.alive:
-			right = "[color=#777788]%s[/color]" % ("lost" if s.lost else "dark")
+			right = "[color=#777788]%s[/color]" % ("lost" if s.lost else ("fell" if s.fell else "dark"))
 		else:
 			var lc := "#ffffff"
 			if s.light >= Cfg.ESCAPE_LIGHT:

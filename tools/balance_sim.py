@@ -1,6 +1,6 @@
 """Plays many headless LAST LIGHT rounds in parallel and summarises escape rates.
 
-Usage: python tools/balance_sim.py [rounds] [--gentle] [--jobs N]
+Usage: python tools/balance_sim.py [rounds] [--gentle] [--noshove] [--jobs N]
 Every pilgrim is AI (the player on autopilot), so this measures the game's
 pressure, not a human's skill.
 """
@@ -14,8 +14,9 @@ PROJECT = Path(__file__).resolve().parent.parent
 def one(_):
     args = [GODOT, "--headless", "--path", str(PROJECT), "--fixed-fps", "60",
             "--quit-after", "18700", "--", "--autostart", "--autopilot", "--log"]
-    if "--gentle" in sys.argv:
-        args.append("--gentle")
+    for flag in ("--gentle", "--noshove"):
+        if flag in sys.argv:
+            args.append(flag)
     out = subprocess.run(args, capture_output=True, text=True, timeout=900).stdout
     m = re.search(r"RESULT (.*)", out)
     if not m:
@@ -31,7 +32,7 @@ def main():
     print("rounds=%d  escapes per round: %s" % (len(rows), " ".join(str(int(e)) for e in esc)))
     print("mean escapes=%.1f  stdev=%.1f  player escaped %d/%d" % (
         statistics.mean(esc), statistics.pstdev(esc), sum(r["player"] == "esc" for r in rows), len(rows)))
-    for k in ["bloom", "shard", "damage", "flare", "kills", "blooms", "hollows"]:
+    for k in ["bloom", "shard", "damage", "flare", "kills", "blooms", "hollows", "fell", "shoves", "pushed_off", "wyrm", "drops"]:
         print("  avg %-7s %.0f" % (k, statistics.mean(r[k] for r in rows)))
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 extends Node3D
-## Ember Bloom (heal), Light Shard (small heal, dropped by hollows) or a tool.
+## Ember Bloom (heal), Light Shard (small heal, dropped by hollows), a tool, or a
+## Sunflare (left by a drop: +2 flares and some light).
 
 var kind := "bloom"
 var heal := 12.0
@@ -27,6 +28,8 @@ func _ready() -> void:
 		"shard":
 			_build_shard()
 			lifetime = 25.0
+		"flare":
+			_build_flare()
 		_:
 			_build_tool()
 	vis.scale = Vector3.ONE * 0.01
@@ -37,7 +40,7 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	age += delta
 	vis.position.y = 0.12 * sin(age * 2.2)
-	vis.rotation.y += delta * 0.8
+	vis.rotation.y += delta * (2.5 if kind == "flare" else 0.8)
 	if glow:
 		glow.light_energy = glow_base * (0.85 + 0.15 * sin(age * 3.3))
 	if lifetime > 0.0:
@@ -155,3 +158,25 @@ func _build_tool() -> void:
 	holder.add_child(h)
 	_light(Color(1.0, 0.85, 0.6), 1.2, 4.0, 1.2)
 	_beam(Color(1.0, 0.8, 0.35), 14.0)
+
+
+func _build_flare() -> void:
+	var core := SphereMesh.new()
+	core.radius = 0.28
+	core.height = 0.56
+	_add(core, _mat(Color(1.0, 0.95, 0.75), Color(1.0, 0.7, 0.3), 9.0), Vector3(0, 1.0, 0))
+	var ray := CylinderMesh.new()
+	ray.top_radius = 0.0
+	ray.bottom_radius = 0.09
+	ray.height = 0.75
+	ray.radial_segments = 4
+	ray.rings = 1
+	var rm := _mat(Color(1.0, 0.6, 0.2), Color(1.0, 0.45, 0.1), 6.0)
+	for i in 8:
+		var a := TAU * i / 8.0
+		var d := Vector3(cos(a), sin(a) * 0.6, sin(a))
+		var mi := _add(ray, rm, Vector3(0, 1.0, 0) + d.normalized() * 0.45)
+		var up := Vector3.UP if absf(d.normalized().y) < 0.9 else Vector3.RIGHT
+		mi.basis = Basis.looking_at(d.normalized(), up) * Basis(Vector3.RIGHT, -PI / 2.0)
+	_light(Color(1.0, 0.55, 0.2), 2.6, 7.0, 1.0)
+	_beam(Color(1.0, 0.45, 0.12), 26.0)

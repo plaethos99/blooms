@@ -17,6 +17,19 @@ var tool_name := ""
 var tool_swings := 0
 var swing_cd := 0.0
 var flare_cd := 0.0
+var flares: int = Cfg.FLARE_START
+var flare_regen := 0.0
+var want_jump := false
+var air_speed := 0.0 # if > 0, horizontal speed through the air (aimed jumps)
+var jump_buffer := 0.0
+var coyote := 0.0
+var shove_cd := 0.0
+var fell := false
+var fall_t := 0.0
+var last_shover = null
+var last_shove_ms := 0
+var cause := ""
+var last_wyrm_ms := -100000
 var bracing := false
 var brace_ready := true
 var brace_recover := 0.0
@@ -90,6 +103,14 @@ func _physics_process(delta: float) -> void:
 	if alive and playing:
 		swing_cd = maxf(0.0, swing_cd - delta)
 		flare_cd = maxf(0.0, flare_cd - delta)
+		shove_cd = maxf(0.0, shove_cd - delta)
+		if flares <= 0:
+			flare_regen += delta
+			if flare_regen >= Cfg.FLARE_RECHARGE * (0.6 if is_player and main.gentle else 1.0):
+				flare_regen = 0.0
+				flares = 1
+				if is_player:
+					main.hud.toast("Your lantern rekindled a flare")
 		if not brace_ready:
 			brace_recover -= delta
 			if brace_recover <= 0.0:
@@ -98,6 +119,7 @@ func _physics_process(delta: float) -> void:
 	else:
 		move_dir = Vector3.ZERO
 		want_sprint = false
+		want_jump = false
 		bracing = false
 	if bracing and light < Cfg.BRACE_LIGHT:
 		bracing = false
@@ -117,15 +139,33 @@ func _physics_process(delta: float) -> void:
 	if bracing:
 		speed *= Cfg.BRACE_SPEED_MULT
 
+	var grounded := is_on_floor()
+	if air_speed > 0.0 and (not grounded or jump_buffer > 0.0 or want_jump):
+		speed = air_speed
 	var hv := Vector3.ZERO
 	if moving:
 		hv = move_dir.normalized() * speed
 	hv += knock
-	knock = knock.lerp(Vector3.ZERO, minf(1.0, delta * 4.0))
-	var k := minf(1.0, delta * 12.0)
+	knock = knock.lerp(Vector3.ZERO, minf(1.0, delta * (4.0 if grounded else 1.5)))
+	var k := minf(1.0, delta * (12.0 if grounded else Cfg.AIR_CONTROL))
 	velocity.x = lerpf(velocity.x, hv.x, k)
 	velocity.z = lerpf(velocity.z, hv.z, k)
-	velocity.y -= 22.0 * delta
+	velocity.y -= Cfg.GRAVITY * delta
+	# Jumping, with a little forgiveness: a press just before landing, or just after
+	# stepping off an edge, still counts.
+	coyote = 0.13 if grounded else coyote - delta
+	if want_jump:
+		jump_buffer = 0.15
+		want_jump = false
+	jump_buffer -= delta
+	if jump_buffer > 0.0 and coyote > 0.0 and alive and playing and not escaped:
+		velocity.y = Cfg.JUMP_VEL
+		if moving:
+			velocity.x = hv.x
+			velocity.z = hv.z
+		jump_buffer = 0.0
+		coyote = 0.0
+		main.sfx.play("jump", null if is_player else global_position, -6.0 if is_player else -10.0, randf_range(0.9, 1.15))
 	move_and_slide()
 	if is_player and alive and is_on_floor():
 		_step_acc += Vector2(velocity.x, velocity.z).length() * delta
@@ -137,21 +177,52 @@ func _physics_process(delta: float) -> void:
 		if moving and face_lock <= 0.0:
 			facing = Vector3(move_dir.x, 0, move_dir.z).normalized()
 		visual.rotation.y = lerp_angle(visual.rotation.y, atan2(facing.x, facing.z), minf(1.0, delta * 12.0))
-	if global_position.y < -12.0:
-		_fell()
+	if global_position.y < main.world.FALL_Y and not fell:
+		_fall_into_abyss()
+	if fell:
+		fall_t += delta
+		if global_position.y < main.world.UNDERWORLD_Y + 3.0 and visual.visible:
+			visual.visible = false
+			name_label.visible = false
+			main.on_hit_underglow(self)
+			set_physics_process(false)
+			return
 	_update_visual()
 
 
-func _fell() -> void:
-	global_position = spawn_point + Vector3(0, 1.0, 0)
-	velocity = Vector3.ZERO
+func _fall_into_abyss() -> void:
+	fell = true
 	if alive:
-		main.feed("%s fell from the terraces" % display_name, Color(0.8, 0.8, 0.9))
-		lose_light(10.0)
+		cause = "fell"
+		collapse()
 
 
 func push(v: Vector3) -> void:
 	knock = v
+
+
+## A hard push (a shove, a bite, a blast): takes effect at once, even in mid-air.
+func shoved(v: Vector3, by = null) -> void:
+	if not alive or escaped:
+		return
+	knock = Vector3(v.x, 0.0, v.z)
+	velocity.x = v.x
+	velocity.z = v.z
+	velocity.y = maxf(velocity.y, v.y)
+	if by != null:
+		last_shover = by
+		last_shove_ms = Time.get_ticks_msec()
+
+
+func try_shove() -> bool:
+	if not alive or escaped or shove_cd > 0.0:
+		return false
+	shove_cd = Cfg.SHOVE_COOLDOWN
+	var tw := create_tween()
+	tw.tween_property(visual, "position", facing * 0.35, 0.08)
+	tw.tween_property(visual, "position", Vector3.ZERO, 0.2)
+	main.do_shove(self)
+	return true
 
 
 func heal(amount: float) -> bool:
@@ -227,13 +298,18 @@ func _use_swing() -> void:
 
 
 func try_flare() -> bool:
-	if not alive or flare_cd > 0.0 or light <= Cfg.FLARE_COST + 1.0:
+	if not alive or escaped or flare_cd > 0.0 or flares <= 0:
 		return false
-	flare_cd = Cfg.FLARE_COOLDOWN * (0.6 if is_player and main.gentle else 1.0)
-	light -= Cfg.FLARE_COST
-	main.stats["flare"] += Cfg.FLARE_COST
+	flare_cd = Cfg.FLARE_COOLDOWN
+	flares -= 1
+	main.stats["flare"] += 1
 	main.do_flare(self)
 	return true
+
+
+func add_flares(n: int) -> void:
+	flares = mini(Cfg.FLARE_MAX, flares + n)
+	flare_regen = 0.0
 
 
 func collapse(silent := false) -> void:
@@ -245,7 +321,10 @@ func collapse(silent := false) -> void:
 	bracing = false
 	brace_ring.visible = false
 	var tw := create_tween()
-	tw.tween_property(visual, "rotation:x", PI * 0.5, 0.6).set_trans(Tween.TRANS_BOUNCE).set_ease(Tween.EASE_OUT)
+	if cause == "fell":
+		tw.tween_property(visual, "rotation:x", PI * 0.9, 1.2)
+	else:
+		tw.tween_property(visual, "rotation:x", PI * 0.5, 0.6).set_trans(Tween.TRANS_BOUNCE).set_ease(Tween.EASE_OUT)
 	name_label.modulate = Color(0.5, 0.5, 0.55, 0.6)
 	if not silent:
 		main.on_survivor_down(self)

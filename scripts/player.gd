@@ -79,6 +79,15 @@ func _controller(delta: float) -> void:
 	var right := Vector3(cos(yaw), 0, -sin(yaw))
 	move_dir = right * iv.x - fwd * iv.y
 	want_sprint = Input.is_action_pressed("sprint")
+	if main.touch and main.touch.move.length() > 0.92:
+		want_sprint = true
+	if Input.is_action_just_pressed("jump"):
+		want_jump = true
+	if Input.is_action_just_pressed("push"):
+		facing = fwd
+		face_lock = 0.3
+		if not try_shove():
+			main.hud.toast("Catching your breath (%.0fs)" % shove_cd)
 	bracing = Input.is_action_pressed("brace") and light >= Cfg.BRACE_LIGHT
 	if bracing:
 		facing = fwd
@@ -92,11 +101,8 @@ func _controller(delta: float) -> void:
 			_no_tool_cd = 2.0
 			main.hud.toast("No tool. Look for a gold beam of light.")
 	if Input.is_action_just_pressed("flare"):
-		if not try_flare():
-			if flare_cd > 0.0:
-				main.hud.toast("Flare recharging (%.0fs)" % flare_cd)
-			else:
-				main.hud.toast("Too dim to flare")
+		if not try_flare() and flares <= 0:
+			main.hud.toast("No flares! Race to a SUNFLARE drop (orange on the map)")
 	if Input.is_action_just_pressed("brace") and light < Cfg.BRACE_LIGHT:
 		main.hud.toast("Bracing needs 70% light")
 
@@ -118,8 +124,11 @@ func spectate_name() -> String:
 
 func _process(delta: float) -> void:
 	var target: Node3D = self
-	if not alive or escaped:
+	if (not alive or escaped) and not (fell and fall_t < 2.6):
 		target = _spectate_target()
+	if fell and fall_t < 2.6:
+		# Watch yourself tumble into the Underglow for a moment.
+		pitch = lerpf(pitch, -1.1, minf(1.0, delta * 2.0))
 	var tp := target.global_position + Vector3(0, 1.6, 0)
 	cam_pivot.global_position = cam_pivot.global_position.lerp(tp, minf(1.0, delta * 10.0))
 	# On autopilot (or while spectating) the camera swings behind whoever we follow,

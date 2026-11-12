@@ -137,8 +137,53 @@ pilgrims play by Normal rules.
 - Recording flags: `--autopilot --timescale=2.5 --introsecs=6 --quitend`, plus Godot's
   `--write-movie file.avi --fixed-fps 15` (or `.ogv` for a 3× smaller file).
 
+## The Sky Gardens (v0.6)
+The single island became an **archipelago of seven floating islands** over the
+**Underglow**, a glowing abyss of mist with luminous rivers, crystal spires, drifting
+light-jellies and rising spores. Fall in and you are gone.
+
+| Island | Height | What's there |
+|---|---|---|
+| Dawn Meadow (start) | 0 | Everyone spawns in a ring. The first Sunflare lands in the middle at 00:03 |
+| Lantern Grove | 2.5 | Blossom trees, a shrine |
+| Ember Rocks | 0 | Glowing amber crystals, a shrine |
+| Mirror Pond | 7 | The pond spills over the edge as a waterfall, a shrine |
+| Bell Ruins | 5.5 | Columns, a shrine |
+| Heart Rock | 4 | Small island in the middle; the fastest route to the gate |
+| Sun Gate Isle | 10 | The gate, a colonnade, two waterfalls, a pillar of light visible from everywhere |
+
+- **Stepping stones**: 8 bridges of 3–7 floating stones. Each hop goes up or down by up
+  to 1.2 m and the gaps are 1.2–1.8 m, so you must jump (Space, jump apex ~1.9 m).
+- **Beauty**: hanging gardens (glowing vine curtains on every rim and under most stones),
+  garden ledges on the cliffs, 8 waterfalls pouring into the abyss (with sound),
+  blossom petals on the wind, crystals under each island, the Underglow lighting the
+  islands from below.
+- **Push (E)**: shove anyone within 2 m. Near an edge it sends them into the abyss.
+  Bracing cuts a shove to 30%. 3 s cooldown. Bots shove too (more when a prize is close).
+- **Sunflare drops**: announced 6 s ahead (beam, countdown ring, map marker, siren).
+  A burning star crashes down, blasts anyone inside the ring, and leaves a Sunflare:
+  **+2 flares and +12% light** for whoever grabs it first. Every 20–28 s (14–18 s at night).
+- **Flares are now ammo** (start with 1, hold up to 3, an empty hand rekindles one in
+  45 s). A flare blasts hollows back **and throws nearby pilgrims**.
+- **Hollows** are bat-winged shadow wraiths: crown of horns, six burning eyes, a jaw
+  that opens, tendrils. They screech when they pick you, rear back with blazing eyes,
+  then **lunge**. Bites knock you back, and on a stone that can mean a fall.
+- **The Devourer**: a vast serpent swimming in the Underglow. From 00:45 in, every
+  26–36 s (15–20 s at night) it picks a bridge with pilgrims on it. The stones glow red
+  and the abyss roars for 2.6 s, then it bursts up through the bridge and sweeps
+  everyone it touches into the abyss.
+- **Rush**: title camera circles the Sun Gate; on start the camera holds on the gate
+  ("your only way out"), flies back over the islands to you, then 3-2-1-RUN!. A driving
+  drum loop runs under the match and swells for drops, hollows and the Devourer.
+- **Map** (top right, heading-up): islands, stones, gate, incoming Sunflares with
+  countdown, blooms, tools, pilgrims, hollows nearby, and the bridge about to be struck.
+
+Balance (all AI, player on autopilot): **Normal 2.9 escapes per round** (12 rounds,
+stdev 1.4), **Gentle 2.2** with the player escaping 5/8. About 6 of 10 pilgrims fall
+into the Underglow each round, 3 of them pushed.
+
 ## Next steps
-1. Playtest and tune `scripts/cfg.gd` (every number lives there).
+1. Playtest jumping and pushing with real people; tune `scripts/cfg.gd`.
 2. Online multiplayer (Godot high-level multiplayer, server-authoritative).
 3. Real art pass: CC0 packs (Quaternius / Kenney), character models, audio
    (wind, chimes, hollow whispers, a gate choir).

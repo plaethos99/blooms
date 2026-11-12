@@ -32,6 +32,13 @@ const HOLLOW_REACH := 1.3
 const HOLLOW_HITS := 2
 const HOLLOW_SPAWN_MIN_DIST := 10.0
 const STAGGER_TIME := 1.5
+const LUNGE_RANGE := 4.5
+const LUNGE_SPEED := 11.0
+const LUNGE_WINDUP := 0.4
+const LUNGE_TIME := 0.35
+const LUNGE_COOLDOWN := 3.2
+const BITE_KNOCK := 1.8
+const LUNGE_KNOCK := 4.5
 
 const WALK_SPEED := 5.0
 const SPRINT_SPEED := 7.5
@@ -40,10 +47,37 @@ const BRACE_SPEED_MULT := 0.35
 const STAMINA_MAX := 3.0
 const SWING_COOLDOWN := 0.55
 const SWING_REACH := 2.4
-const FLARE_COOLDOWN := 12.0
-const FLARE_COST := 3.0
+const FLARE_COOLDOWN := 1.0 # between two flares
 const FLARE_RADIUS := 6.0
 const FLARE_PUSH := 7.0
+const FLARE_SHOVE := 7.5 # flares also blast other pilgrims away
+const FLARE_START := 1
+const FLARE_MAX := 3
+const FLARE_RECHARGE := 45.0 # an empty hand slowly regains one flare
+
+# Movement between the islands.
+const GRAVITY := 26.0
+const JUMP_VEL := 10.0
+const AIR_CONTROL := 5.0
+const SHOVE_RANGE := 2.1
+const SHOVE_FORCE := 9.5
+const SHOVE_LIFT := 3.5
+const SHOVE_COOLDOWN := 3.0
+
+# Sunflare drops: announced, then they crash down somewhere. First to grab it wins.
+const DROP_WARN := 6.0
+const DROP_FIRST := 3.0 # seconds after GO
+const DROP_INTERVAL := Vector2(20.0, 28.0)
+const DROP_INTERVAL_NIGHT := Vector2(14.0, 18.0)
+const DROP_FLARES := 2
+const DROP_HEAL := 12.0
+const DROP_BLAST := 3.5
+
+# The Devourer: rises from the Underglow and sweeps pilgrims off the stones.
+const WYRM_FIRST := 45.0 # seconds into the match
+const WYRM_INTERVAL := Vector2(26.0, 36.0)
+const WYRM_INTERVAL_NIGHT := Vector2(15.0, 20.0)
+const WYRM_WARN := 2.6
 const BRACE_RECOVER := 2.0
 
 const SHRINE_MAX_RADIUS := 6.0

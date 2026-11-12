@@ -4,6 +4,7 @@ extends Control
 
 var gate := {}       # {pos: Vector2, edge: bool, angle: float, text: String, col: Color}
 var threats: Array = [] # [{pos: Vector2, angle: float, alpha: float}]
+var extra: Array = []  # more markers drawn like the gate one (incoming Sunflares)
 var _t := 0.0
 
 
@@ -48,23 +49,28 @@ func _draw() -> void:
 		var c := Color(0.75, 0.45, 1.0, float(t["alpha"]))
 		_arrow(t["pos"], t["angle"], c, 15.0)
 		_arrow(t["pos"] - Vector2.from_angle(t["angle"]) * 12.0, t["angle"], Color(c.r, c.g, c.b, c.a * 0.5), 11.0)
-	if gate.is_empty():
-		return
-	var col: Color = gate["col"]
-	var p: Vector2 = gate["pos"]
+	for m in extra:
+		_marker(font, m)
+	if not gate.is_empty():
+		_marker(font, gate)
+
+
+func _marker(font: Font, m: Dictionary) -> void:
+	var col: Color = m["col"]
+	var p: Vector2 = m["pos"]
 	var pulse := 0.75 + 0.25 * sin(_t * 4.0)
-	if gate["edge"]:
-		_arrow(p, gate["angle"], Color(col.r, col.g, col.b, pulse), 24.0)
-		var tp := p - Vector2.from_angle(gate["angle"]) * 40.0
-		_label(font, tp + Vector2(-90, 6), gate["text"], col)
+	if m["edge"]:
+		_arrow(p, m["angle"], Color(col.r, col.g, col.b, pulse), 24.0)
+		var tp := p - Vector2.from_angle(m["angle"]) * 40.0
+		_label(font, tp + Vector2(-90, 6), m["text"], col)
 	else:
 		var s := 11.0 + 3.0 * pulse
 		var dia := PackedVector2Array([p + Vector2(0, -s), p + Vector2(s, 0), p + Vector2(0, s), p + Vector2(-s, 0)])
 		draw_colored_polygon(dia, Color(col.r, col.g, col.b, pulse))
 		draw_polyline(dia + PackedVector2Array([dia[0]]), Color(0, 0, 0, 0.6), 2.0)
-		_label(font, p + Vector2(-90, -22), gate["text"], col)
+		_label(font, p + Vector2(-90, -22), m["text"], col)
 
 
 func _label(font: Font, pos: Vector2, text: String, col: Color) -> void:
-	draw_string_outline(font, pos, text, HORIZONTAL_ALIGNMENT_CENTER, 180, 17, 6, Color(0, 0, 0, 0.8))
-	draw_string(font, pos, text, HORIZONTAL_ALIGNMENT_CENTER, 180, 17, col)
+	draw_string_outline(font, pos - Vector2(30, 0), text, HORIZONTAL_ALIGNMENT_CENTER, 240, 17, 6, Color(0, 0, 0, 0.8))
+	draw_string(font, pos - Vector2(30, 0), text, HORIZONTAL_ALIGNMENT_CENTER, 240, 17, col)

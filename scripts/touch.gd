@@ -2,7 +2,8 @@ extends CanvasLayer
 ## On-screen controls for phones and tablets (enabled automatically on mobile, or with
 ## `-- --touch` on desktop to preview the layout).
 ## Left half: a floating move stick. Right half: drag to look.
-## Buttons: FLARE, HIT, BRACE (hold), RUN (hold). Title screen: GENTLE / NORMAL / WATCH AI.
+## Buttons: JUMP, PUSH, FLARE, HIT, BRACE (hold). Pushing the stick all the way runs.
+## Title screen: GENTLE / NORMAL / WATCH AI.
 
 const STICK_R := 85.0
 
@@ -44,10 +45,11 @@ func _buttons() -> Array:
 	if main.state == "ended":
 		return [["again", "PLAY AGAIN", Vector2(s.x * 0.5, s.y - 80.0), 70.0]]
 	return [
-		["flare", "FLARE", Vector2(s.x - 115, s.y - 125), 62.0],
-		["swing", "HIT", Vector2(s.x - 255, s.y - 85), 48.0],
-		["brace", "BRACE", Vector2(s.x - 240, s.y - 215), 44.0],
-		["sprint", "RUN", Vector2(s.x - 95, s.y - 270), 44.0],
+		["jump", "JUMP", Vector2(s.x - 110, s.y - 115), 66.0],
+		["push", "PUSH", Vector2(s.x - 250, s.y - 80), 46.0],
+		["flare", "FLARE", Vector2(s.x - 240, s.y - 205), 46.0],
+		["swing", "HIT", Vector2(s.x - 100, s.y - 265), 42.0],
+		["brace", "BRACE", Vector2(s.x - 370, s.y - 85), 40.0],
 	]
 
 
@@ -85,6 +87,9 @@ func _on_press(idx: int, pos: Vector2) -> void:
 	var b := _button_at(pos)
 	if not b.is_empty():
 		_press_button(idx, b[0])
+		return
+	if main.state == "flyover":
+		main.skip_flyover()
 		return
 	if main.state != "playing":
 		return
@@ -145,7 +150,9 @@ func _draw_controls() -> void:
 			var p = main.player
 			match b[0]:
 				"flare":
-					ready = p.flare_cd <= 0.0
+					ready = p.flares > 0
+				"push":
+					ready = p.shove_cd <= 0.0
 				"swing":
 					ready = p.tool_swings > 0
 				"brace":
@@ -154,8 +161,11 @@ func _draw_controls() -> void:
 		_canvas.draw_circle(c, r, fill)
 		_canvas.draw_arc(c, r, 0.0, TAU, 48, Color(1.0, 0.9, 0.7, 0.75 if ready else 0.3), 3.0, true)
 		var fs := 20 if r > 50.0 else 16
-		_canvas.draw_string_outline(font, c + Vector2(-r, fs * 0.35), b[1], HORIZONTAL_ALIGNMENT_CENTER, r * 2.0, fs, 5, Color(0, 0, 0, 0.7))
-		_canvas.draw_string(font, c + Vector2(-r, fs * 0.35), b[1], HORIZONTAL_ALIGNMENT_CENTER, r * 2.0, fs, Color(1, 0.96, 0.88, 1.0 if ready else 0.5))
+		var lbl: String = b[1]
+		if playing and b[0] == "flare":
+			lbl = "FLARE %d" % main.player.flares
+		_canvas.draw_string_outline(font, c + Vector2(-r, fs * 0.35), lbl, HORIZONTAL_ALIGNMENT_CENTER, r * 2.0, fs, 5, Color(0, 0, 0, 0.7))
+		_canvas.draw_string(font, c + Vector2(-r, fs * 0.35), lbl, HORIZONTAL_ALIGNMENT_CENTER, r * 2.0, fs, Color(1, 0.96, 0.88, 1.0 if ready else 0.5))
 	if playing and _stick_id != -1:
 		_canvas.draw_circle(_stick_origin, STICK_R, Color(1, 1, 1, 0.08))
 		_canvas.draw_arc(_stick_origin, STICK_R, 0.0, TAU, 48, Color(1, 0.9, 0.7, 0.5), 3.0, true)
