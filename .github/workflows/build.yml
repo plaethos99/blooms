@@ -1,0 +1,122 @@
+name: Build game
+
+# Exports a portable Windows build and an Android APK with Godot.
+# Every push to main uploads both as workflow artifacts; pushing a tag like v0.5
+# also attaches them to a GitHub Release.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  GODOT_VERSION: 4.7.2
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 17 (Android signing)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Cache Godot and export templates
+        id: cache-godot
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/godot-bin
+            ~/.local/share/godot/export_templates
+          key: godot-${{ env.GODOT_VERSION }}-stable
+
+      - name: Download Godot and export templates
+        if: steps.cache-godot.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          base="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          mkdir -p ~/godot-bin
+          wget -q "$base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q "Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip" -d ~/godot-bin
+          wget -q "$base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          unzip -q "Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          dest=~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          mkdir -p "$dest"
+          mv templates/* "$dest/"
+          rm -f ./*.zip ./*.tpz
+
+      - name: Install Godot
+        run: |
+          sudo ln -sf ~/godot-bin/Godot_v${GODOT_VERSION}-stable_linux.x86_64 /usr/local/bin/godot
+          godot --version
+
+      - name: Configure Android SDK and signing
+        run: |
+          set -euo pipefail
+          keystore="$GITHUB_WORKSPACE/ci/android-debug.keystore"
+          mkdir -p ~/.config/godot
+          for f in editor_settings-4.tres editor_settings-4.7.tres; do
+            cat > ~/.config/godot/$f <<EOF
+          [gd_resource type="EditorSettings" format=3]
+
+          [resource]
+          export/android/android_sdk_path = "${ANDROID_SDK_ROOT}"
+          export/android/java_sdk_path = "${JAVA_HOME}"
+          export/android/debug_keystore = "${keystore}"
+          export/android/debug_keystore_user = "androiddebugkey"
+          export/android/debug_keystore_pass = "android"
+          EOF
+            sed -i 's/^          //' ~/.config/godot/$f
+          done
+          {
+            echo "GODOT_ANDROID_KEYSTORE_DEBUG_PATH=${keystore}"
+            echo "GODOT_ANDROID_KEYSTORE_DEBUG_USER=androiddebugkey"
+            echo "GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD=android"
+          } >> "$GITHUB_ENV"
+          # Each CI build gets a higher Android version code so it installs over the last one.
+          sed -i "s/^version\/code=.*/version\/code=${GITHUB_RUN_NUMBER}/" export_presets.cfg
+
+      - name: Import project
+        run: godot --headless --import
+
+      - name: Export Windows (portable)
+        run: |
+          mkdir -p build/windows
+          godot --headless --export-release "Windows Desktop" build/windows/LastLight.exe
+          test -f build/windows/LastLight.exe
+          (cd build/windows && zip -q -r ../LastLight-windows-portable.zip .)
+
+      - name: Export Android (APK)
+        run: |
+          mkdir -p build/android
+          godot --headless --export-debug "Android" build/android/LastLight.apk
+          test -f build/android/LastLight.apk
+          cp build/android/LastLight.apk build/LastLight-android.apk
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: LastLight-windows-portable
+          path: build/windows/
+
+      - name: Upload Android build
+        uses: actions/upload-artifact@v4
+        with:
+          name: LastLight-android
+          path: build/LastLight-android.apk
+
+      - name: Publish release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/LastLight-windows-portable.zip
+            build/LastLight-android.apk
