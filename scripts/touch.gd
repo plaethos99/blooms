@@ -44,6 +44,8 @@ func _buttons() -> Array:
 		]
 	if main.state == "ended":
 		return [["again", "PLAY AGAIN", Vector2(s.x * 0.5, s.y - 80.0), 70.0]]
+	if not main.player.alive or main.player.escaped:
+		return [["again", "RESTART", Vector2(s.x * 0.5, s.y - 70.0), 52.0]]
 	return [
 		["jump", "JUMP", Vector2(s.x - 110, s.y - 115), 66.0],
 		["push", "PUSH", Vector2(s.x - 250, s.y - 80), 46.0],
@@ -113,7 +115,7 @@ func _press_button(idx: int, action: String) -> void:
 				main.player.set_autopilot(true)
 			main.start_match(action == "gentle")
 		"again":
-			main.get_tree().reload_current_scene()
+			main.restart()
 		_:
 			if main.player.autopilot:
 				main.player.set_autopilot(false)

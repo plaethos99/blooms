@@ -117,6 +117,8 @@ func _ready() -> void:
 		Engine.max_physics_steps_per_frame = 24
 	if args.has("autopilot"):
 		player.autopilot = true
+	if args.has("clicktest"):
+		print("CLICKTEST scene ready, state=", state, " instance=", get_instance_id())
 	if (shot_path != "" and not args.has("intro")) or args.has("autostart"):
 		start_match()
 	elif not args.has("overview"):
@@ -277,6 +279,12 @@ func start_match(gentle_mode := false) -> void:
 		intro_cam = null
 	sfx.play("toll", null, -4.0)
 	feed("The sun is setting. Keep your lantern bright.", C_INFO)
+
+
+## Start a new round (back to the title screen).
+func restart() -> void:
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	get_tree().reload_current_scene()
 
 
 ## Click or key during the flyover: skip straight to the countdown.
@@ -691,8 +699,8 @@ func _log_status() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("restart") and state == "ended":
-		get_tree().reload_current_scene()
+	if event.is_action_pressed("restart") and (state == "ended" or (state == "playing" and (not player.alive or player.escaped))):
+		restart()
 	elif state == "flyover" and ((event is InputEventKey and event.pressed and not event.echo) or (event is InputEventMouseButton and event.pressed)):
 		skip_flyover()
 	elif state == "intro" and event is InputEventKey and event.pressed \
@@ -723,6 +731,21 @@ func _process(delta: float) -> void:
 			var path := "%s/snap_%03d.png" % [dir, int(Cfg.MATCH_TIME - time_left)]
 			get_viewport().get_texture().get_image().save_png(path)
 			print("snap ", path, " light=", int(player.light), " pos=", player.global_position.snapped(Vector3.ONE * 0.1))
+	if args.has("clicktest") and state == "ended":
+		# Test: click PLAY AGAIN with a real mouse event once the end screen is up.
+		_quit_t += delta
+		if _quit_t > 2.5 and _quit_t < 100.0:
+			_quit_t = 1000.0
+			var b: Button = hud.find_child("PlayAgain", true, false)
+			var at: Vector2 = get_viewport().get_final_transform() * b.get_global_rect().get_center()
+			print("CLICKTEST clicking ", at)
+			for pressed in [true, false]:
+				var ev := InputEventMouseButton.new()
+				ev.button_index = MOUSE_BUTTON_LEFT
+				ev.pressed = pressed
+				ev.position = at
+				ev.global_position = at
+				Input.parse_input_event(ev)
 	if args.has("quitend") and state == "ended":
 		_quit_t += delta
 		if _quit_t > 6.0 * Engine.time_scale:

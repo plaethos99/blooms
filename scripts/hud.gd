@@ -63,6 +63,7 @@ var alert_t := 0.0
 var count_lbl: Label
 var count_t := 0.0
 var caption: Control
+var restart_btn: Button
 var _caption_on := false
 
 
@@ -372,8 +373,56 @@ func _build_end() -> void:
 	var vb: Node = endp.get_child(0).get_child(0)
 	end_title = _center_label(vb, "", 60, Color(1.0, 0.85, 0.55))
 	end_body = _center_label(vb, "", 19, Color(0.95, 0.9, 0.85))
-	_center_label(vb, k("again"), 22, Color(1.0, 0.95, 0.8))
+	if main.touch == null:
+		# Phones get their own PLAY AGAIN button from the touch layer.
+		var gap := Control.new()
+		gap.custom_minimum_size = Vector2(0, 14)
+		vb.add_child(gap)
+		var row := HBoxContainer.new()
+		row.alignment = BoxContainer.ALIGNMENT_CENTER
+		row.add_theme_constant_override("separation", 24)
+		vb.add_child(row)
+		var again := _button("PLAY AGAIN", 30, Vector2(300, 70))
+		again.name = "PlayAgain"
+		again.pressed.connect(main.restart)
+		row.add_child(again)
+		var quit := _button("QUIT", 22, Vector2(160, 70))
+		quit.pressed.connect(func(): main.get_tree().quit())
+		row.add_child(quit)
+		_center_label(vb, "or press R", 15, Color(0.85, 0.85, 0.9, 0.7))
 	endp.visible = false
+	# While you watch the others after falling or burning out: start over right away.
+	if main.touch == null:
+		restart_btn = _button("RESTART NOW", 18, Vector2(220, 48))
+		restart_btn.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
+		restart_btn.grow_horizontal = Control.GROW_DIRECTION_BOTH
+		restart_btn.grow_vertical = Control.GROW_DIRECTION_BEGIN
+		restart_btn.offset_bottom = -24
+		restart_btn.offset_top = -72
+		restart_btn.offset_left = -110
+		restart_btn.offset_right = 110
+		restart_btn.visible = false
+		restart_btn.pressed.connect(main.restart)
+		root.add_child(restart_btn)
+
+
+func _button(text: String, size: int, min_size: Vector2) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.custom_minimum_size = min_size
+	b.focus_mode = Control.FOCUS_NONE
+	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	b.add_theme_font_size_override("font_size", size)
+	for st in ["normal", "hover", "pressed"]:
+		var sb := StyleBoxFlat.new()
+		sb.set_corner_radius_all(12)
+		sb.set_border_width_all(2)
+		sb.border_color = Color(1.0, 0.85, 0.5, 0.9)
+		sb.bg_color = {"normal": Color(0.12, 0.08, 0.04, 0.85), "hover": Color(0.35, 0.22, 0.08, 0.95), "pressed": Color(0.55, 0.38, 0.12, 1.0)}[st]
+		b.add_theme_stylebox_override(st, sb)
+	b.add_theme_color_override("font_color", Color(1.0, 0.92, 0.7))
+	b.add_theme_color_override("font_hover_color", Color(1.0, 1.0, 0.9))
+	return b
 
 
 func hide_intro() -> void:
@@ -390,7 +439,16 @@ func show_end(title: String, escaped: Array, lost: Array) -> void:
 	end_body.text = body
 	endp.visible = true
 	endp.modulate.a = 0.0
-	create_tween().tween_property(endp, "modulate:a", 1.0, 1.5)
+	var tw := create_tween().set_parallel(true)
+	tw.tween_property(endp, "modulate:a", 1.0, 1.5)
+	# Clear the play HUD away so the result and the buttons stand alone.
+	for c in game_ui:
+		tw.tween_property(c, "modulate:a", 0.0, 0.8)
+	tw.tween_property(tip_panel, "modulate:a", 0.0, 0.5)
+	tip_queue.clear()
+	tip_t = 0.0
+	if restart_btn:
+		restart_btn.visible = false
 
 
 func feed(text: String, col: Color) -> void:
@@ -681,6 +739,11 @@ func _process(delta: float) -> void:
 	elif main.gentle:
 		abil.text += "\n[color=#a8d8ff]Gentle mode: softer bites, bigger blooms[/color]"
 
+	if restart_btn:
+		var out: bool = st == "playing" and (not p.alive or p.escaped)
+		if out and not restart_btn.visible and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		restart_btn.visible = out
 	_compute_objective(p)
 	objective.label_settings.font_color = obj_col
 	objective.get_parent().visible = objective.text != ""
