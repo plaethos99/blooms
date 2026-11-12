@@ -117,7 +117,7 @@ func _ready() -> void:
 		Engine.max_physics_steps_per_frame = 24
 	if args.has("autopilot"):
 		player.autopilot = true
-	if args.has("clicktest"):
+	if args.has("clicktest") or args.has("outclick"):
 		print("CLICKTEST scene ready, state=", state, " instance=", get_instance_id())
 	if (shot_path != "" and not args.has("intro")) or args.has("autostart"):
 		start_match()
@@ -731,6 +731,28 @@ func _process(delta: float) -> void:
 			var path := "%s/snap_%03d.png" % [dir, int(Cfg.MATCH_TIME - time_left)]
 			get_viewport().get_texture().get_image().save_png(path)
 			print("snap ", path, " light=", int(player.light), " pos=", player.global_position.snapped(Vector3.ONE * 0.1))
+	if state == "playing" and (args.has("falltest") or args.has("dietest")) and _frames >= 40 and not has_meta("tested"):
+		set_meta("tested", true)
+		if args.has("falltest"):
+			player.global_position = world.island_center(world.START_ISLAND) + Vector3(0, 0.5, world.island_radius(world.START_ISLAND) + 1.5)
+		else:
+			print("DIETEST before pos=", player.global_position.snapped(Vector3.ONE * 0.1), " floor=", player.is_on_floor())
+			player.lose_light(200.0)
+	if args.has("outclick") and state == "playing" and hud.out_panel.visible and _quit_t < 100.0:
+		_quit_t += delta
+		if _quit_t > 0.8:
+			_quit_t = 1000.0
+			var ob: Button = hud.find_child("OutPlayAgain", true, false)
+			var oat: Vector2 = get_viewport().get_final_transform() * ob.get_global_rect().get_center()
+			print("OUTCLICK panel='", hud.out_title.text, "' clicking ", oat)
+			print("OUTCLICK player fell=", player.fell, " cause=", player.cause, " pos=", player.global_position.snapped(Vector3.ONE * 0.1), " layer=", player.collision_layer, " mask=", player.collision_mask)
+			for pressed in [true, false]:
+				var ev := InputEventMouseButton.new()
+				ev.button_index = MOUSE_BUTTON_LEFT
+				ev.pressed = pressed
+				ev.position = oat
+				ev.global_position = oat
+				Input.parse_input_event(ev)
 	if args.has("clicktest") and state == "ended":
 		# Test: click PLAY AGAIN with a real mouse event once the end screen is up.
 		_quit_t += delta
@@ -919,16 +941,16 @@ func on_survivor_down(s) -> void:
 		var now := Time.get_ticks_msec()
 		var msg := "%s fell into the Underglow." % s.display_name
 		if now - int(s.last_wyrm_ms) < 6000:
-			msg = "The Devourer swept %s into the Underglow!" % s.display_name
+			msg = "The Devourer swept %s into the Underglow!" % ("you" if s.is_player else s.display_name)
 		elif s.last_shover != null and now - int(s.last_shove_ms) < 4500:
 			stats["pushed_off"] += 1
-			msg = "%s knocked %s into the Underglow!" % [s.last_shover.display_name, s.display_name]
+			msg = "%s knocked %s into the Underglow!" % [s.last_shover.display_name, "you" if s.is_player else s.display_name]
 		feed(msg, C_BAD)
 		sfx.play("fall", null if s.is_player else s.global_position, 0.0, randf_range(0.9, 1.1))
 		if s.is_player:
 			hud.banner("YOU FELL INTO THE UNDERGLOW\nSpectating. %s to switch." % ("Tap the screen" if touch else "Press Tab"), 4.0)
 		return
-	feed("%s's lantern went out." % s.display_name, C_BAD)
+	feed("Your lantern went out." if s.is_player else "%s's lantern went out." % s.display_name, C_BAD)
 	fx_burst(s.global_position + Vector3(0, 1.0, 0), Color(0.12, 0.08, 0.18), 30, true, 1.5)
 	sfx.play("lantern_out", null if s.is_player else s.global_position, 0.0)
 	if s.is_player:

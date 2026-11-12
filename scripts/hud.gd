@@ -64,6 +64,11 @@ var count_lbl: Label
 var count_t := 0.0
 var caption: Control
 var restart_btn: Button
+var out_panel: Control
+var out_title: Label
+var out_body: Label
+var out_t := 0.0
+var out_dismissed := false
 var _caption_on := false
 
 
@@ -404,6 +409,81 @@ func _build_end() -> void:
 		restart_btn.visible = false
 		restart_btn.pressed.connect(main.restart)
 		root.add_child(restart_btn)
+	_build_out_panel()
+
+
+## Shown a moment after you fall into the Underglow, your lantern goes out, or
+## you escape: play again straight away, or keep watching the others.
+func _build_out_panel() -> void:
+	out_panel = PanelContainer.new()
+	var sb := _panel_style()
+	sb.bg_color = Color(0.02, 0.02, 0.06, 0.95)
+	sb.border_color = Color(1.0, 0.85, 0.5, 0.5)
+	sb.set_content_margin_all(26)
+	out_panel.add_theme_stylebox_override("panel", sb)
+	out_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	out_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	out_panel.grow_vertical = Control.GROW_DIRECTION_BOTH
+	out_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	out_panel.visible = false
+	root.add_child(out_panel)
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 12)
+	out_panel.add_child(vb)
+	out_title = _center_label(vb, "", 40, Color(1.0, 0.75, 0.55))
+	out_body = _center_label(vb, "", 18, Color(0.9, 0.9, 0.95))
+	if main.touch:
+		_center_label(vb, "Tap RESTART to play again, or tap anywhere to keep watching", 16, Color(1.0, 0.92, 0.75))
+		return
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 20)
+	vb.add_child(row)
+	var again := _button("PLAY AGAIN", 26, Vector2(260, 62))
+	again.name = "OutPlayAgain"
+	again.pressed.connect(main.restart)
+	row.add_child(again)
+	var watch := _button("KEEP WATCHING", 18, Vector2(200, 62))
+	watch.pressed.connect(func():
+		out_dismissed = true
+		out_panel.visible = false)
+	row.add_child(watch)
+	_center_label(vb, "or press R any time", 14, Color(0.85, 0.85, 0.9, 0.7))
+
+
+func _update_out_panel(delta: float, p) -> void:
+	var out: bool = main.state == "playing" and (not p.alive or p.escaped)
+	if not out:
+		out_t = 0.0
+		out_panel.visible = false
+		return
+	out_t += delta
+	if out_dismissed or out_t < 2.5:
+		return
+	if not out_panel.visible:
+		if p.escaped:
+			out_title.text = "YOU ESCAPED!"
+			out_body.text = "You stepped through the Sun Gate. Play again, or watch who else makes it."
+		elif p.fell:
+			out_title.text = "YOU FELL INTO THE UNDERGLOW"
+			out_body.text = "The abyss took you. Play again, or watch the others try."
+		else:
+			out_title.text = "YOUR LANTERN WENT OUT"
+			out_body.text = "The dark took you. Play again, or watch the others try."
+		out_panel.visible = true
+		banner_t = 0.0
+		tip_t = 0.0
+		tip_queue.clear()
+		out_panel.modulate.a = 0.0
+		create_tween().tween_property(out_panel, "modulate:a", 1.0, 0.4)
+		if main.touch == null:
+			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+func dismiss_out_panel() -> void:
+	if out_panel.visible:
+		out_dismissed = true
+		out_panel.visible = false
 
 
 func _button(text: String, size: int, min_size: Vector2) -> Button:
@@ -449,6 +529,7 @@ func show_end(title: String, escaped: Array, lost: Array) -> void:
 	tip_t = 0.0
 	if restart_btn:
 		restart_btn.visible = false
+	out_panel.visible = false
 
 
 func feed(text: String, col: Color) -> void:
@@ -551,7 +632,7 @@ func _compute_objective(p) -> void:
 		objective.text = "You escaped! Watching %s (Tab to switch)" % p.spectate_name()
 		return
 	if not p.alive:
-		objective.text = "Your lantern went out. Watch how %s does it (Tab to switch)" % p.spectate_name()
+		objective.text = "%s Watch how %s does it (Tab to switch)" % ["You fell into the Underglow." if p.fell else "Your lantern went out.", p.spectate_name()]
 		return
 	var pp: Vector3 = p.global_position
 	var need := int(ceil(Cfg.ESCAPE_LIGHT - p.light))
@@ -718,7 +799,7 @@ func _process(delta: float) -> void:
 	if p.escaped:
 		status_lbl.text = "You passed through the Sun Gate. Watching %s (Tab)" % p.spectate_name()
 	elif not p.alive:
-		status_lbl.text = "Your lantern went out. Watching %s (Tab)" % p.spectate_name()
+		status_lbl.text = "%s Watching %s (Tab)" % ["You fell." if p.fell else "Your lantern went out.", p.spectate_name()]
 	elif light >= Cfg.ESCAPE_LIGHT:
 		status_lbl.text = "Bright enough for the Sun Gate (80%)"
 	elif light < Cfg.DIM_LIGHT:
@@ -739,11 +820,12 @@ func _process(delta: float) -> void:
 	elif main.gentle:
 		abil.text += "\n[color=#a8d8ff]Gentle mode: softer bites, bigger blooms[/color]"
 
+	_update_out_panel(delta, p)
 	if restart_btn:
 		var out: bool = st == "playing" and (not p.alive or p.escaped)
 		if out and not restart_btn.visible and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-		restart_btn.visible = out
+		restart_btn.visible = out and not out_panel.visible
 	_compute_objective(p)
 	objective.label_settings.font_color = obj_col
 	objective.get_parent().visible = objective.text != ""

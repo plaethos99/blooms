@@ -46,7 +46,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		pitch = clampf(pitch - event.relative.y * 0.0024, -1.25, 0.45)
 		_cam_follow_t = 2.0
 	elif event is InputEventMouseButton and event.pressed:
-		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and main.state != "ended":
+		var out: bool = main.state == "playing" and (not alive or escaped)
+		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and main.state != "ended" and not out:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 			if main.state == "intro":
 				main.start_match()

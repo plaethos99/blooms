@@ -95,6 +95,7 @@ func _on_press(idx: int, pos: Vector2) -> void:
 		return
 	if main.state != "playing":
 		return
+	main.hud.dismiss_out_panel()
 	if main.player.autopilot:
 		main.player.set_autopilot(false)
 	if pos.x < _size().x * 0.45 and _stick_id == -1:
