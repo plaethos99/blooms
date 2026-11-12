@@ -91,74 +91,121 @@ void sky() {
 }
 """
 
-const GRASS_SHADER := """
-shader_type spatial;
-render_mode cull_disabled;
-uniform vec3 base_col : source_color = vec3(0.05, 0.14, 0.12);
-uniform vec3 tip_col : source_color = vec3(0.45, 0.70, 0.48);
-uniform vec3 glow_col : source_color = vec3(0.3, 1.0, 0.85);
-uniform float night = 0.0;
-varying float hgt;
-varying vec3 tint;
-void vertex() {
-	hgt = UV.y;
-	tint = COLOR.rgb;
-	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	float w = sin(TIME * 1.4 + wp.x * 0.25 + wp.z * 0.18) * 0.5 + sin(TIME * 2.7 + wp.x * 0.9 - wp.z * 0.6) * 0.18;
-	vec3 wind = vec3(w * 0.22, 0.0, w * 0.12) * hgt * hgt;
-	VERTEX += (vec4(wind, 0.0) * MODEL_MATRIX).xyz;
-}
-void fragment() {
-	ALBEDO = mix(base_col, tip_col * tint, hgt);
-	NORMAL = (VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz;
-	ROUGHNESS = 0.85;
-	SPECULAR = 0.15;
-	EMISSION = glow_col * tint * night * hgt * hgt * 0.35;
-}
-"""
-
-const FLOWER_SHADER := """
-shader_type spatial;
-uniform float glow = 0.6;
-varying vec3 tint;
-void vertex() {
-	tint = COLOR.rgb;
-}
-void fragment() {
-	ALBEDO = tint * 0.5;
-	EMISSION = tint * glow;
-	ROUGHNESS = 0.5;
-}
-"""
-
-## Curtains of hanging garden: leafy strands with flowers that glow after sunset.
+## Curtains of hanging garden: a photo of hanging ivy (cut out), swaying, its
+## little flowers glowing after sunset.
 const VINE_SHADER := """
 shader_type spatial;
 render_mode cull_disabled;
+uniform sampler2D ivy : source_color, filter_linear_mipmap, repeat_disable;
 uniform float night = 0.0;
 varying vec3 tint;
 void vertex() {
 	tint = COLOR.rgb;
 	vec3 wp = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-	VERTEX.x += sin(TIME * 0.9 + wp.x * 0.3 + wp.z * 0.2 + UV.y * 2.0) * 0.12 * UV.y * UV.y;
-	VERTEX.z += sin(TIME * 0.7 + wp.z * 0.25) * 0.15 * UV.y * UV.y;
+	VERTEX.x += sin(TIME * 0.9 + wp.x * 0.3 + wp.z * 0.2 + UV.y * 2.0) * 0.08 * UV.y * UV.y;
+	VERTEX.z += sin(TIME * 0.7 + wp.z * 0.25) * 0.12 * UV.y * UV.y;
 }
 void fragment() {
-	float x = UV.x * 7.0;
-	float cell = floor(x);
-	float fx = fract(x) - 0.5;
-	float rnd = fract(sin(cell * 91.3 + tint.r * 17.0 + tint.b * 5.0) * 4375.5);
-	float len = 0.4 + 0.6 * rnd;
-	float wob = sin(UV.y * 18.0 + cell * 2.0) * 0.12;
-	float leaf = 0.12 + 0.14 * (0.5 + 0.5 * sin(UV.y * 70.0 + cell * 3.0));
-	if (abs(fx + wob) > leaf || UV.y > len) {
-		discard;
-	}
-	float fl = step(0.84, fract(sin(floor(UV.y * 26.0) * 13.7 + cell * 7.1) * 951.3));
-	vec3 leafc = mix(vec3(0.16, 0.42, 0.24), vec3(0.08, 0.26, 0.2), UV.y / len);
-	ALBEDO = mix(leafc, tint, fl);
-	EMISSION = tint * fl * (0.25 + 3.5 * night) + vec3(0.1, 0.6, 0.45) * night * 0.12;
+	vec4 t = texture(ivy, UV);
+	ALPHA = t.a;
+	ALPHA_SCISSOR_THRESHOLD = 0.4;
+	float pink = clamp((t.r + t.b) * 0.6 - t.g * 0.9, 0.0, 1.0);
+	ALBEDO = t.rgb * mix(vec3(1.0), tint * 1.3, pink);
+	EMISSION = tint * pink * (0.1 + 4.0 * night) + vec3(0.1, 0.6, 0.45) * night * 0.06;
 	ROUGHNESS = 0.8;
+	BACKLIGHT = vec3(0.2, 0.3, 0.1);
+}
+"""
+
+## Grass clumps and wildflowers: photo cut-outs on crossed cards, in the wind.
+const CARD_SHADER := """
+shader_type spatial;
+render_mode cull_disabled;
+uniform sampler2D card : source_color, filter_linear_mipmap, repeat_disable;
+uniform float night = 0.0;
+uniform float glow = 0.0;
+uniform vec3 card_tint : source_color = vec3(1.0);
+varying vec3 tint;
+void vertex() {
+	tint = COLOR.rgb;
+	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	float h = 1.0 - UV.y;
+	float w = sin(TIME * 1.4 + wp.x * 0.25 + wp.z * 0.18) * 0.5 + sin(TIME * 2.7 + wp.x * 0.9 - wp.z * 0.6) * 0.18;
+	VERTEX += (vec4(vec3(w * 0.14, 0.0, w * 0.08) * h * h, 0.0) * MODEL_MATRIX).xyz;
+}
+void fragment() {
+	vec4 t = texture(card, UV);
+	ALPHA = t.a;
+	ALPHA_SCISSOR_THRESHOLD = 0.45;
+	ALBEDO = t.rgb * tint * card_tint;
+	NORMAL = (VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz;
+	float bloom = clamp((t.r + t.b) * 0.6 - t.g * 0.8, 0.0, 1.0);
+	EMISSION = t.rgb * bloom * glow + vec3(0.2, 0.9, 0.7) * night * 0.05 * (1.0 - UV.y);
+	ROUGHNESS = 0.85;
+	SPECULAR = 0.2;
+	BACKLIGHT = vec3(0.3, 0.35, 0.15);
+}
+"""
+
+## Rock and ground: photo textures projected from three sides (no UV seams on
+## the sculpted islands), with moss where the model's vertex colour says (green
+## channel) or, for meadows, in patches from a noise texture.
+const TERRAIN_SHADER := """
+shader_type spatial;
+uniform sampler2D tex_a : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D nrm_a : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D tex_b : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D nrm_b : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D patches : filter_linear_mipmap, repeat_enable;
+uniform float scale_a = 0.25;
+uniform float scale_b = 0.4;
+uniform vec3 tint_a : source_color = vec3(1.0);
+uniform vec3 tint_b : source_color = vec3(1.0);
+uniform float moss_amount = 1.0;
+uniform float patch_amount = 0.0;
+uniform float normal_strength = 1.0;
+uniform float occlusion = 1.0;
+varying vec3 wpos;
+varying vec3 wnrm;
+void vertex() {
+	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	wnrm = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
+}
+vec3 tri_w(vec3 n) {
+	vec3 w = pow(abs(n), vec3(4.0));
+	return w / (w.x + w.y + w.z);
+}
+vec3 tri(sampler2D t, vec3 p, vec3 w) {
+	return texture(t, p.zy).rgb * w.x + texture(t, p.xz).rgb * w.y + texture(t, p.xy).rgb * w.z;
+}
+vec3 tri_n(sampler2D t, vec3 p, vec3 n, vec3 w) {
+	vec3 tx = texture(t, p.zy).xyz * 2.0 - 1.0;
+	vec3 ty = texture(t, p.xz).xyz * 2.0 - 1.0;
+	vec3 tz = texture(t, p.xy).xyz * 2.0 - 1.0;
+	tx = vec3(tx.xy + n.zy, abs(tx.z) * n.x);
+	ty = vec3(ty.xy + n.xz, abs(ty.z) * n.y);
+	tz = vec3(tz.xy + n.xy, abs(tz.z) * n.z);
+	return normalize(tx.zyx * w.x + ty.xzy * w.y + tz.xyz * w.z);
+}
+void fragment() {
+	vec3 n = normalize(wnrm);
+	vec3 w = tri_w(n);
+	vec3 pa = wpos * scale_a;
+	vec3 pb = wpos * scale_b;
+	vec3 ca = tri(tex_a, pa, w) * tint_a;
+	vec3 cb = tri(tex_b, pb, w) * tint_b;
+	float moss = COLOR.g * moss_amount;
+	if (patch_amount > 0.0) {
+		float pn = texture(patches, wpos.xz * 0.035).r * 0.7 + texture(patches, wpos.xz * 0.11).r * 0.3;
+		moss = smoothstep(0.55, 0.75, pn) * patch_amount;
+	}
+	float m = smoothstep(0.3, 0.7, moss + (dot(cb, vec3(0.33)) - 0.3) * 0.5);
+	ALBEDO = mix(ca, cb, m) * mix(1.0 - occlusion * 0.55, 1.0, COLOR.r);
+	vec3 nw = normalize(mix(tri_n(nrm_a, pa, n, w), tri_n(nrm_b, pb, n, w), m));
+	nw = normalize(mix(n, nw, normal_strength));
+	NORMAL = normalize((VIEW_MATRIX * vec4(nw, 0.0)).xyz);
+	ROUGHNESS = 0.92;
+	SPECULAR = 0.3;
 }
 """
 
@@ -196,6 +243,9 @@ uniform sampler2D noise_tex : repeat_enable, filter_linear_mipmap;
 uniform vec3 top_col : source_color = vec3(1.0, 0.75, 0.65);
 uniform vec3 shade_col : source_color = vec3(0.5, 0.4, 0.6);
 uniform float scale = 0.0025;
+uniform float ring = 1.0;
+uniform float sparse = 0.0;
+uniform float opacity = 0.95;
 varying vec3 wp;
 void vertex() {
 	wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
@@ -207,7 +257,7 @@ void fragment() {
 	float dist = length(wp.xz - vec2(0.0, -50.0));
 	ALBEDO = mix(shade_col, top_col, smoothstep(0.35, 0.8, n));
 	// A ring of cloud far out; the abyss right below the islands stays clear.
-	ALPHA = smoothstep(0.32, 0.62, n) * smoothstep(150.0, 240.0, dist) * (1.0 - smoothstep(420.0, 640.0, dist)) * 0.95;
+	ALPHA = smoothstep(0.32 + sparse, 0.62 + sparse, n) * mix(1.0, smoothstep(150.0, 240.0, dist), ring) * (1.0 - smoothstep(420.0, 640.0, dist)) * opacity;
 }
 """
 
@@ -216,6 +266,11 @@ shader_type spatial;
 render_mode unshaded, cull_disabled, blend_add, depth_draw_never;
 uniform float open = 0.0;
 void fragment() {
+	// Quad 3.1 x 5.8 m; the arch springs 3.95 m up with a 1.55 m radius.
+	vec2 m = vec2((UV.x - 0.5) * 3.1, (1.0 - UV.y) * 5.8);
+	if (m.y > 3.95 && length(m - vec2(0.0, 3.95)) > 1.55) {
+		discard;
+	}
 	vec2 uv = UV - vec2(0.5);
 	float r = length(uv * vec2(1.0, 0.7));
 	float ang = atan(uv.y, uv.x);
@@ -307,6 +362,7 @@ var sun: DirectionalLight3D
 var moon: DirectionalLight3D
 var uplight: DirectionalLight3D
 var cloud_mats: Array = []
+var abyss_mats: Array = []
 var grass_mat: ShaderMaterial
 var flower_mat: ShaderMaterial
 var vine_mat: ShaderMaterial
@@ -348,6 +404,11 @@ var _rune_mat: StandardMaterial3D
 var _lamp_bulb: StandardMaterial3D
 var _under_crystal: StandardMaterial3D
 var _amber: StandardMaterial3D
+var _tex := {}
+var _model_mats := {}
+var _iron: StandardMaterial3D
+var _foliage_mats: Array = []
+var _card_mats: Array = []
 var _vine_xf: Array = []
 var _vine_cols: Array = []
 var _flower_xf: Array = []
@@ -642,6 +703,66 @@ func nearest_shrine(p: Vector3, min_radius: float):
 
 # ---------------------------------------------------------------- build steps
 
+func _tex_load(name: String) -> Texture2D:
+	if not _tex.has(name):
+		_tex[name] = load("res://textures/%s.png" % name)
+	return _tex[name]
+
+
+## Photo-textured material, projected from three sides in world space.
+func _photo_mat(name: String, scale: float, rough: float, tint := Color.WHITE, normal_scale := 1.0) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = _tex_load(name)
+	m.albedo_color = tint
+	m.normal_enabled = true
+	m.normal_texture = _tex_load(name + "_n")
+	m.normal_scale = normal_scale
+	m.roughness = rough
+	m.uv1_triplanar = true
+	m.uv1_world_triplanar = true
+	m.uv1_scale = Vector3.ONE * scale
+	m.uv1_triplanar_sharpness = 4.0
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	return m
+
+
+func _terrain(a: String, b: String, scale_a: float, scale_b: float, tint_a: Color, tint_b: Color, moss: float, patches: float) -> ShaderMaterial:
+	var m := _shader_mat(TERRAIN_SHADER)
+	m.set_shader_parameter("tex_a", _tex_load(a))
+	m.set_shader_parameter("nrm_a", _tex_load(a + "_n"))
+	m.set_shader_parameter("tex_b", _tex_load(b))
+	m.set_shader_parameter("nrm_b", _tex_load(b + "_n"))
+	m.set_shader_parameter("patches", _noise_tex)
+	m.set_shader_parameter("scale_a", scale_a)
+	m.set_shader_parameter("scale_b", scale_b)
+	m.set_shader_parameter("tint_a", tint_a)
+	m.set_shader_parameter("tint_b", tint_b)
+	m.set_shader_parameter("moss_amount", moss)
+	m.set_shader_parameter("patch_amount", patches)
+	return m
+
+
+func _foliage(card: String, tint: Color, night_glow: float) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = _tex_load(card)
+	m.albedo_color = tint
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+	m.alpha_scissor_threshold = 0.4
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	m.roughness = 0.8
+	m.backlight_enabled = true
+	m.backlight = Color(0.35, 0.3, 0.25)
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	if night_glow > 0.0:
+		m.emission_enabled = true
+		m.emission_texture = _tex_load(card)
+		m.emission = Color(1.0, 0.55, 0.75)
+		m.emission_energy_multiplier = 0.0
+		glow_mats.append([m, 0.0, night_glow])
+	_foliage_mats.append(m)
+	return m
+
+
 func _make_materials() -> void:
 	_noise_tex = NoiseTexture2D.new()
 	_noise_tex.width = 512
@@ -651,17 +772,27 @@ func _make_materials() -> void:
 	fn.frequency = 0.008
 	fn.fractal_octaves = 4
 	_noise_tex.noise = fn
-	_stone = _mat(Color(0.6, 0.54, 0.57), 0.95)
-	_stone_top = _mat(Color(0.55, 0.58, 0.52), 0.95)
-	_dark = _mat(Color(0.3, 0.25, 0.32), 1.0)
-	_marble = _mat(Color(0.93, 0.9, 0.85), 0.5)
-	_trunk = _mat(Color(0.3, 0.22, 0.25), 0.9)
+	# Photo textures (made from the Grok reference set, see 3d/tests/lastlight_world).
+	_stone = _photo_mat("tex_cliff", 0.3, 0.95)
+	_stone_top = _photo_mat("tex_moss_stone", 0.45, 0.95)
+	_dark = _photo_mat("tex_rock_dark", 0.25, 0.95, Color(0.85, 0.85, 0.9))
+	_marble = _photo_mat("tex_marble", 0.4, 0.45, Color(1.0, 0.98, 0.95), 0.6)
+	_trunk = _photo_mat("tex_bark", 0.8, 0.9)
+	_iron = _mat(Color(0.12, 0.11, 0.1), 0.45)
+	_iron.metallic = 0.7
 	_water = _mat(Color(0.05, 0.12, 0.17), 0.03)
 	_water.metallic = 0.3
-	for c in [Color(1.0, 0.62, 0.78), Color(0.78, 0.62, 1.0), Color(0.45, 0.92, 0.85), Color(1.0, 0.78, 0.55)]:
-		var m := _mat(c, 0.8, c, 0.05)
-		_canopies.append(m)
-		glow_mats.append([m, 0.05, 0.45])
+	_model_mats = {
+		"grass": _terrain("tex_grass", "tex_moss_stone", 0.33, 0.3, Color(0.78, 0.85, 0.62), Color(0.9, 0.88, 0.8), 0.0, 0.55),
+		"cliff": _terrain("tex_cliff", "tex_grass", 0.22, 0.4, Color(1, 1, 1), Color(0.45, 0.55, 0.32), 1.0, 0.0),
+		"under": _terrain("tex_cliff", "tex_rock_dark", 0.18, 0.2, Color(0.78, 0.74, 0.72), Color(0.8, 0.8, 0.85), 0.0, 0.0),
+		"stonetop": _terrain("tex_moss_stone", "tex_grass", 0.55, 0.5, Color(1, 1, 1), Color(0.55, 0.65, 0.4), 0.4, 0.0),
+		"marble": _marble,
+		"bark": _trunk,
+		"blossom": _foliage("card_blossom", Color(1, 1, 1), 0.12),
+		"leaves": _foliage("card_leaves", Color(0.9, 1.0, 0.9), 0.0),
+	}
+	_canopies = [_model_mats["blossom"]]
 	_orb_mat = _mat(Color(1.0, 0.85, 0.5), 0.4, Color(1.0, 0.75, 0.35), 1.0)
 	glow_mats.append([_orb_mat, 1.0, 5.0])
 	_rune_mat = _mat(Color(0.4, 0.9, 1.0), 0.4, Color(0.35, 0.85, 1.0), 0.6)
@@ -672,6 +803,34 @@ func _make_materials() -> void:
 	glow_mats.append([_under_crystal, 2.0, 6.0])
 	_amber = _mat(Color(1.0, 0.65, 0.3), 0.25, Color(1.0, 0.5, 0.15), 1.5)
 	glow_mats.append([_amber, 1.5, 4.5])
+
+
+## Places a model made in Blender (3d/tests/lastlight_world/scripts/build_world.py)
+## and gives each surface the game's material of the same name.
+func _model(path: String, parent: Node, pos: Vector3, rot := Vector3.ZERO, scl := Vector3.ONE) -> Node3D:
+	var scene: PackedScene = load(path)
+	var n: Node3D = scene.instantiate()
+	n.position = pos
+	n.rotation = rot
+	n.scale = scl
+	parent.add_child(n)
+	_apply_model_mats(n)
+	return n
+
+
+func _apply_model_mats(n: Node) -> void:
+	if n is MeshInstance3D:
+		var mi: MeshInstance3D = n
+		for i in mi.mesh.get_surface_count():
+			var src: Material = mi.mesh.surface_get_material(i)
+			var key: String = src.resource_name if src else mi.mesh.surface_get_name(i)
+			key = key.to_lower()
+			for k in _model_mats:
+				if key.begins_with(k):
+					mi.set_surface_override_material(i, _model_mats[k])
+					break
+	for c in n.get_children():
+		_apply_model_mats(c)
 
 
 func _build_environment() -> void:
@@ -686,8 +845,11 @@ func _build_environment() -> void:
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	env.ambient_light_sky_contribution = 0.65
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
-	env.tonemap_mode = Environment.TONE_MAPPER_ACES
-	env.tonemap_exposure = 1.0
+	env.tonemap_mode = Environment.TONE_MAPPER_AGX
+	env.tonemap_exposure = 1.15
+	env.adjustment_enabled = true
+	env.adjustment_saturation = 1.18
+	env.adjustment_contrast = 1.06
 	env.glow_enabled = true
 	env.glow_intensity = 0.9
 	env.glow_bloom = 0.06
@@ -695,10 +857,15 @@ func _build_environment() -> void:
 	env.ssao_enabled = true
 	env.ssr_enabled = true
 	env.fog_enabled = true
-	env.fog_density = 0.0009
+	env.fog_density = 0.00045
+	# Mist pools in the abyss below the islands; the islands themselves stay clear.
+	env.fog_height = -14.0
+	env.fog_height_density = 0.012
+	env.fog_sun_scatter = 0.25
+	env.fog_aerial_perspective = 0.3
 	env.fog_sky_affect = 0.1
 	env.volumetric_fog_enabled = true
-	env.volumetric_fog_density = 0.0018
+	env.volumetric_fog_density = 0.0012
 	env.volumetric_fog_anisotropy = 0.6
 	env.volumetric_fog_length = 80.0
 	var we := WorldEnvironment.new()
@@ -707,7 +874,8 @@ func _build_environment() -> void:
 
 	sun = DirectionalLight3D.new()
 	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 110.0
+	sun.directional_shadow_max_distance = 120.0
+	sun.shadow_blur = 1.5
 	sun.light_volumetric_fog_energy = 1.5
 	add_child(sun)
 	moon = DirectionalLight3D.new()
@@ -752,70 +920,21 @@ func _plan_bridges() -> void:
 
 
 func _build_islands() -> void:
-	var grass_cap := _mat(Color(0.2, 0.36, 0.3), 0.95)
 	for i in ISLANDS.size():
 		var c := island_center(i)
 		var r := island_radius(i)
-		var body := CylinderMesh.new()
-		body.top_radius = r
-		body.bottom_radius = r * 0.93
-		body.height = 3.0
-		body.radial_segments = 64
-		body.rings = 1
-		_mesh(self, body, _stone, c - Vector3(0, 1.5, 0))
-		var cap := CylinderMesh.new()
-		cap.top_radius = r - 0.12
-		cap.bottom_radius = r - 0.12
-		cap.height = 0.1
-		cap.radial_segments = 64
-		_mesh(self, cap, grass_cap, c - Vector3(0, 0.03, 0))
+		# The sculpted island: grass top at its height, cliffs, and the rock it floats on.
+		_model("res://models/island_%d.glb" % i, self, c)
 		var shape := CylinderShape3D.new()
 		shape.radius = r
 		shape.height = 3.0
 		_static(shape, c - Vector3(0, 1.5, 0), LAYER_TERRAIN)
-		# The rocky root that the island floats on.
-		var rh := r * 1.4
-		var root := CylinderMesh.new()
-		root.top_radius = r * 0.93
-		root.bottom_radius = r * 0.1
-		root.height = rh
-		root.radial_segments = 14
-		root.rings = 4
-		_mesh(self, root, _dark, c - Vector3(0, 3.0 + rh * 0.5, 0), Vector3(0, randf() * TAU, 0))
-		for k in int(r / 2.5) + 2:
-			var a := randf() * TAU
-			var rr := randf_range(r * 0.25, r * 0.75)
-			var sz := randf_range(1.5, r * 0.28)
-			var cone := CylinderMesh.new()
-			cone.top_radius = sz
-			cone.bottom_radius = 0.15
-			cone.height = sz * 3.0
-			cone.radial_segments = 7
-			_mesh(self, cone, _dark, c + Vector3(cos(a) * rr, -3.0 - sz * 1.5 - randf() * r * 0.3, sin(a) * rr))
-		# Glowing crystals hang from the underside.
-		for k in 5:
-			var a := randf() * TAU
-			var rr := randf_range(r * 0.2, r * 0.6)
-			var h := randf_range(1.0, 2.6)
-			var cr := CylinderMesh.new()
-			cr.top_radius = randf_range(0.2, 0.4)
-			cr.bottom_radius = 0.02
-			cr.height = h
-			cr.radial_segments = 5
-			cr.rings = 1
-			var y := -3.0 - (1.0 - rr / r) * rh * 0.55 - h * 0.5
-			_mesh(self, cr, _under_crystal, c + Vector3(cos(a) * rr, y, sin(a) * rr), Vector3(randf_range(-0.3, 0.3), 0, randf_range(-0.3, 0.3)))
-		# A few pebbles drift around the island.
+		# A few boulders drift around the island.
 		for k in 4:
 			var a := randf() * TAU
 			var rr := r + randf_range(4.0, 9.0)
-			var sm := SphereMesh.new()
-			var s := randf_range(0.3, 0.9)
-			sm.radius = s
-			sm.height = s * 1.4
-			sm.radial_segments = 7
-			sm.rings = 4
-			var node := _mesh(self, sm, _dark, c + Vector3(cos(a) * rr, randf_range(-9.0, -3.0), sin(a) * rr), Vector3(randf(), randf(), randf()))
+			var s := randf_range(0.4, 1.0)
+			var node := _model("res://models/rock_%d.glb" % (randi() % 3), self, c + Vector3(cos(a) * rr, randf_range(-9.0, -3.0), sin(a) * rr), Vector3(randf(), randf() * TAU, randf()), Vector3(s, s * 0.8, s))
 			floaters.append([node, node.position.y, randf() * TAU, 0.7])
 
 
@@ -884,33 +1003,19 @@ func _build_bridges() -> void:
 
 
 func _build_stone(p: Vector3, r: float, rune: Material) -> void:
-	var top := CylinderMesh.new()
-	top.top_radius = r
-	top.bottom_radius = r * 0.82
-	top.height = STONE_H
-	top.radial_segments = 9
-	top.rings = 1
-	_mesh(self, top, _stone_top, p - Vector3(0, STONE_H * 0.5, 0), Vector3(0, randf() * TAU, 0))
-	var hh := randf_range(1.8, 3.4)
-	var under := CylinderMesh.new()
-	under.top_radius = r * 0.82
-	under.bottom_radius = 0.08
-	under.height = hh
-	under.radial_segments = 7
-	under.rings = 1
-	_mesh(self, under, _dark, p - Vector3(0, STONE_H + hh * 0.5, 0), Vector3(0, randf() * TAU, 0))
+	_model("res://models/stone_%d.glb" % (randi() % 6), self, p, Vector3(0, randf() * TAU, 0), Vector3(r, r * 0.9, r))
 	var ring := TorusMesh.new()
 	ring.inner_radius = r - 0.3
-	ring.outer_radius = r - 0.14
+	ring.outer_radius = r - 0.16
 	ring.rings = 24
 	ring.ring_segments = 4
-	var rm := _mesh(self, ring, rune, p, Vector3.ZERO, Vector3(1, 0.25, 1))
+	var rm := _mesh(self, ring, rune, p + Vector3(0, 0.01, 0), Vector3.ZERO, Vector3(1, 0.12, 1))
 	rm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	# A few strands of hanging garden under most stones.
 	if randf() < 0.7:
 		for k in randi_range(1, 3):
 			var a := randf() * TAU
-			_add_vine(p + Vector3(cos(a) * r * 0.9, -0.15, sin(a) * r * 0.9), a, randf_range(0.6, 1.0), randf_range(1.2, 3.0))
+			_add_vine(p + Vector3(cos(a) * r * 0.95, -0.15, sin(a) * r * 0.95), a, randf_range(0.7, 1.1), randf_range(1.5, 3.5))
 	var shape := CylinderShape3D.new()
 	shape.radius = r
 	shape.height = STONE_H
@@ -918,20 +1023,30 @@ func _build_stone(p: Vector3, r: float, rune: Material) -> void:
 
 
 func _lamp(pos: Vector3) -> void:
+	# An old iron lantern post, like the reference: a post, an arm and a hanging lantern.
 	var post := CylinderMesh.new()
-	post.top_radius = 0.05
-	post.bottom_radius = 0.08
-	post.height = 1.8
-	_mesh(self, post, _trunk, pos + Vector3(0, 0.9, 0))
+	post.top_radius = 0.045
+	post.bottom_radius = 0.07
+	post.height = 2.2
+	_mesh(self, post, _iron, pos + Vector3(0, 1.1, 0))
+	var arm := BoxMesh.new()
+	arm.size = Vector3(0.5, 0.05, 0.05)
+	_mesh(self, arm, _iron, pos + Vector3(0.2, 2.15, 0))
+	var cage := CylinderMesh.new()
+	cage.top_radius = 0.1
+	cage.bottom_radius = 0.13
+	cage.height = 0.32
+	cage.radial_segments = 6
+	_mesh(self, cage, _iron, pos + Vector3(0.38, 1.85, 0), Vector3.ZERO, Vector3(1.0, 1.0, 1.0)).transparency = 0.6
 	var bulb := SphereMesh.new()
-	bulb.radius = 0.15
-	bulb.height = 0.3
-	_mesh(self, bulb, _lamp_bulb, pos + Vector3(0, 1.9, 0))
+	bulb.radius = 0.1
+	bulb.height = 0.24
+	_mesh(self, bulb, _lamp_bulb, pos + Vector3(0.38, 1.85, 0))
 	var l := OmniLight3D.new()
 	l.light_color = Color(1.0, 0.72, 0.42)
 	l.light_energy = 0.4
 	l.omni_range = 7.0
-	l.position = pos + Vector3(0, 1.9, 0)
+	l.position = pos + Vector3(0.38, 1.85, 0)
 	add_child(l)
 	lamp_lights.append(l)
 
@@ -949,27 +1064,22 @@ func _build_gate() -> void:
 	plinth.height = 0.1
 	plinth.radial_segments = 48
 	_mesh(self, plinth, _marble, c + Vector3(0, 0.02, 0))
+	# The marble arch, modelled in Blender; its pillars sit on these colliders.
+	_model("res://models/gate_arch.glb", self, c)
 	for sx in [-1.0, 1.0]:
-		var bm := BoxMesh.new()
-		bm.size = Vector3(0.7, 5.0, 0.7)
-		var pp := c + Vector3(1.95 * float(sx), 2.5, 0)
-		_mesh(self, bm, _marble, pp)
 		var sh := BoxShape3D.new()
-		sh.size = bm.size
-		_static(sh, pp, LAYER_OBSTACLE)
-	var lintel := BoxMesh.new()
-	lintel.size = Vector3(4.9, 0.45, 0.9)
-	_mesh(self, lintel, _marble, c + Vector3(0, 5.1, 0))
+		sh.size = Vector3(0.7, 5.0, 0.7)
+		_static(sh, c + Vector3(1.95 * float(sx), 2.5, 0), LAYER_OBSTACLE)
 	var tm := TorusMesh.new()
 	tm.inner_radius = 1.9
 	tm.outer_radius = 2.35
 	tm.rings = 48
 	tm.ring_segments = 12
-	gate_ring = _mesh(self, tm, gold, c + Vector3(0, 7.0, 0), Vector3(PI / 2.0, 0, 0))
+	gate_ring = _mesh(self, tm, gold, c + Vector3(0, 8.9, 0), Vector3(PI / 2.0, 0, 0))
 	gate_mat = _shader_mat(PORTAL_SHADER)
 	var q := QuadMesh.new()
-	q.size = Vector2(3.2, 4.85)
-	_mesh(self, q, gate_mat, c + Vector3(0, 2.45, 0))
+	q.size = Vector2(3.1, 5.8)
+	_mesh(self, q, gate_mat, c + Vector3(0, 0.4 + 2.9, 0))
 	gate_light = OmniLight3D.new()
 	gate_light.light_color = Color(1.0, 0.75, 0.4)
 	gate_light.light_energy = 0.6
@@ -1081,25 +1191,18 @@ func _pond(center: Vector3, radius: float) -> void:
 
 
 func _column(p: Vector3, h: float, rune: bool) -> void:
-	var cm := CylinderMesh.new()
-	cm.top_radius = 0.4
-	cm.bottom_radius = 0.46
-	cm.height = h
-	cm.radial_segments = 12
-	_mesh(self, cm, _marble, p + Vector3(0, h * 0.5, 0))
-	var base := BoxMesh.new()
-	base.size = Vector3(1.15, 0.3, 1.15)
-	_mesh(self, base, _marble, p + Vector3(0, 0.15, 0))
-	if h > 3.0:
-		var capital := BoxMesh.new()
-		capital.size = Vector3(1.05, 0.28, 1.05)
-		_mesh(self, capital, _marble, p + Vector3(0, h + 0.1, 0))
+	var rot := Vector3(0, randf() * TAU, 0)
+	if h >= 3.0:
+		_model("res://models/column.glb", self, p, rot, Vector3(1, h / 3.8, 1))
+	else:
+		var k := randi() % 2
+		_model("res://models/column_broken_%d.glb" % k, self, p, rot, Vector3(1, h / (2.6 - k * 0.9), 1))
 	if rune:
 		var band := TorusMesh.new()
-		band.inner_radius = 0.42
-		band.outer_radius = 0.5
+		band.inner_radius = 0.37
+		band.outer_radius = 0.43
 		band.rings = 24
-		_mesh(self, band, _rune_mat, p + Vector3(0, h * 0.62, 0))
+		_mesh(self, band, _rune_mat, p + Vector3(0, h * 0.62, 0), Vector3.ZERO, Vector3(1, 0.5, 1))
 	var shp := CylinderShape3D.new()
 	shp.radius = 0.5
 	shp.height = h
@@ -1108,29 +1211,17 @@ func _column(p: Vector3, h: float, rune: bool) -> void:
 
 
 func make_tree(parent: Node, pos: Vector3, s: float, collide: bool) -> void:
-	var cmat: Material = _canopies.pick_random()
-	var trunk := CylinderMesh.new()
-	trunk.top_radius = 0.16 * s
-	trunk.bottom_radius = 0.32 * s
-	trunk.height = 3.2 * s
-	trunk.radial_segments = 8
-	_mesh(parent, trunk, _trunk, pos + Vector3(0, 1.6 * s, 0), Vector3(randf_range(-0.08, 0.08), 0, randf_range(-0.08, 0.08)))
-	for k in 4:
-		var sm := SphereMesh.new()
-		var rr := randf_range(0.9, 1.5) * s
-		sm.radius = rr
-		sm.height = rr * 1.5
-		sm.radial_segments = 12
-		sm.rings = 6
-		var off := Vector3(randf_range(-1.0, 1.0) * s, (3.2 + randf_range(-0.2, 0.9)) * s, randf_range(-1.0, 1.0) * s)
-		_mesh(parent, sm, cmat, pos + off)
+	var path := "res://models/tree_blossom_%d.glb" % (randi() % 3)
+	if randf() < 0.3:
+		path = "res://models/tree_leaves_%d.glb" % (randi() % 2)
+	_model(path, parent, pos, Vector3(0, randf() * TAU, 0), Vector3.ONE * s * 1.15)
 	if collide:
 		for k in 3:
 			var orb := SphereMesh.new()
-			orb.radius = 0.09
-			orb.height = 0.18
+			orb.radius = 0.08
+			orb.height = 0.16
 			var oa := randf() * TAU
-			_mesh(parent, orb, _orb_mat, pos + Vector3(cos(oa) * 1.1 * s, 2.3 * s, sin(oa) * 1.1 * s))
+			_mesh(parent, orb, _orb_mat, pos + Vector3(cos(oa) * 1.0 * s, 2.4 * s, sin(oa) * 1.0 * s))
 		var shp := CylinderShape3D.new()
 		shp.radius = 0.35 * s
 		shp.height = 3.0 * s
@@ -1271,12 +1362,7 @@ func _waterfall(i: int, a: float) -> void:
 	var smi := _mesh(root, stream, _water, Vector3(0, 0.07, -slen * 0.5))
 	smi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	for sx in [-1.0, 1.0]:
-		var rock := SphereMesh.new()
-		rock.radius = 0.55
-		rock.height = 0.8
-		rock.radial_segments = 8
-		rock.rings = 4
-		_mesh(root, rock, _stone, Vector3(1.25 * float(sx), 0.15, -0.4), Vector3(0, randf(), 0), Vector3(1.0, 0.8, 1.3))
+		_model("res://models/rock_%d.glb" % (randi() % 3), root, Vector3(1.3 * float(sx), 0.1, -0.4), Vector3(0, randf() * TAU, 0), Vector3(0.6, 0.45, 0.75))
 	# Spray drifting off the lip.
 	var spray := GPUParticles3D.new()
 	spray.amount = 40
@@ -1356,24 +1442,13 @@ func _build_hanging_gardens() -> void:
 				continue
 			var dir := Vector3(cos(a), 0, sin(a))
 			var p := c + dir * (r * 0.92) + Vector3(0, -randf_range(3.5, 5.5), 0)
-			var shelf := CylinderMesh.new()
-			shelf.top_radius = 1.4
-			shelf.bottom_radius = 0.9
-			shelf.height = 0.5
-			shelf.radial_segments = 10
-			_mesh(self, shelf, _stone, p)
-			for b in 3:
-				var sm := SphereMesh.new()
-				var br := randf_range(0.45, 0.8)
-				sm.radius = br
-				sm.height = br * 1.4
-				sm.radial_segments = 10
-				sm.rings = 5
-				_mesh(self, sm, _canopies.pick_random(), p + Vector3(randf_range(-0.7, 0.7), 0.4 + br * 0.4, randf_range(-0.7, 0.7)))
+			_model("res://models/rock_%d.glb" % (randi() % 3), self, p, Vector3(0, randf() * TAU, 0), Vector3(1.5, 0.6, 1.5))
+			make_tree(self, p + Vector3(0, 0.2, 0), randf_range(0.4, 0.6), false)
 			for v in 4:
 				var va := a + randf_range(-0.9, 0.9)
 				_add_vine(p + Vector3(cos(va) * 1.3, 0.2, sin(va) * 1.3), va, randf_range(0.8, 1.2), randf_range(2.5, 6.0))
 	vine_mat = _shader_mat(VINE_SHADER)
+	vine_mat.set_shader_parameter("ivy", _tex_load("tex_ivy"))
 	var q := QuadMesh.new()
 	q.size = Vector2(1, 1)
 	q.center_offset = Vector3(0, -0.5, 0)
@@ -1392,59 +1467,57 @@ func _build_hanging_gardens() -> void:
 	add_child(mmi)
 
 
-func _tuft_mesh() -> ArrayMesh:
+## Two crossed cards, `w` wide and `h` tall, standing on the ground (UV v=0 at the top).
+func _card_mesh(w: float, h: float) -> ArrayMesh:
 	var verts := PackedVector3Array()
 	var uvs := PackedVector2Array()
 	var norms := PackedVector3Array()
-	for b in 5:
-		var ang := TAU * b / 5.0 + randf() * 0.5
-		var dir := Vector3(cos(ang), 0, sin(ang))
-		var side := Vector3(-dir.z, 0, dir.x) * 0.055
-		var base := dir * 0.06
-		var tip := dir * 0.16 + Vector3(0, 0.28 + randf() * 0.14, 0)
-		verts.append(base - side)
-		verts.append(base + side)
-		verts.append(tip)
-		uvs.append(Vector2(0, 0))
-		uvs.append(Vector2(1, 0))
-		uvs.append(Vector2(0.5, 1))
-		for k in 3:
+	var idx := PackedInt32Array()
+	for k in 2:
+		var d := Vector3(1, 0, 0) if k == 0 else Vector3(0, 0, 1)
+		var base := verts.size()
+		verts.append_array([-d * w * 0.5, d * w * 0.5, d * w * 0.5 + Vector3(0, h, 0), -d * w * 0.5 + Vector3(0, h, 0)])
+		uvs.append_array([Vector2(0, 1), Vector2(1, 1), Vector2(1, 0), Vector2(0, 0)])
+		for i in 4:
 			norms.append(Vector3.UP)
+		idx.append_array([base, base + 1, base + 2, base, base + 2, base + 3])
 	var arr := []
 	arr.resize(Mesh.ARRAY_MAX)
 	arr[Mesh.ARRAY_VERTEX] = verts
 	arr[Mesh.ARRAY_TEX_UV] = uvs
 	arr[Mesh.ARRAY_NORMAL] = norms
+	arr[Mesh.ARRAY_INDEX] = idx
 	var m := ArrayMesh.new()
 	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
 	return m
 
 
 func _build_grass() -> void:
-	grass_mat = _shader_mat(GRASS_SHADER)
+	grass_mat = _shader_mat(CARD_SHADER)
+	grass_mat.set_shader_parameter("card", _tex_load("card_grass"))
+	grass_mat.set_shader_parameter("card_tint", Color(0.55, 0.85, 0.4))
 	var xf: Array = []
 	var cols: Array = []
 	for i in ISLANDS.size():
 		var c := island_center(i)
 		var r := island_radius(i)
-		var target := int(r * r * 9.0)
-		for k in target:
-			var rr := sqrt(randf()) * (r - 0.3)
+		for k in int(r * r * 3.2):
+			var rr := sqrt(randf()) * (r - 0.4)
 			var a := randf() * TAU
 			var p := c + Vector3(cos(a) * rr, 0, sin(a) * rr)
-			if _in_pool(p, 0.3):
+			if _in_pool(p, 0.4):
 				continue
-			if i == GATE_ISLAND and rr < 3.7:
+			if i == GATE_ISLAND and rr < 3.8:
 				continue
-			var s := randf_range(0.7, 1.2)
-			var b := Basis(Vector3.UP, randf() * TAU).scaled(Vector3(s, s * randf_range(0.8, 1.3), s))
+			var s := randf_range(0.6, 1.15)
+			var b := Basis(Vector3.UP, randf() * TAU).scaled(Vector3(s, s * randf_range(0.7, 1.2), s))
 			xf.append(Transform3D(b, p))
 			var g := randf()
-			cols.append(Color(0.75 + g * 0.35, 0.9 + g * 0.15, 0.75 + (1.0 - g) * 0.3))
+			cols.append(Color(0.85 + g * 0.2, 0.9 + g * 0.1, 0.8 + g * 0.15))
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_colors = true
-	mm.mesh = _tuft_mesh()
+	mm.mesh = _card_mesh(1.2, 0.55)
 	mm.instance_count = xf.size()
 	for k in xf.size():
 		mm.set_instance_transform(k, xf[k])
@@ -1457,30 +1530,33 @@ func _build_grass() -> void:
 
 
 func _build_flowers() -> void:
-	flower_mat = _shader_mat(FLOWER_SHADER)
+	flower_mat = _shader_mat(CARD_SHADER)
+	flower_mat.set_shader_parameter("card", _tex_load("card_flowers"))
 	for i in ISLANDS.size():
-		var clusters := int(island_radius(i) * island_radius(i) / 20.0) + 2
+		var clusters := int(island_radius(i) * island_radius(i) / 18.0) + 3
 		for k in clusters:
 			var center = island_point(i, 1.0, 0.5)
 			if center == null:
 				continue
-			var col: Color = FLOWER_PALETTE.pick_random()
-			for f in randi_range(8, 20):
-				var p: Vector3 = center + Vector3(randf_range(-1.6, 1.6), 0, randf_range(-1.6, 1.6))
+			for f in randi_range(3, 7):
+				var p: Vector3 = center + Vector3(randf_range(-1.8, 1.8), 0, randf_range(-1.8, 1.8))
 				if island_at(p) != i or _in_pool(p, 0.2):
 					continue
-				p.y += randf_range(0.3, 0.55)
-				_flower_xf.append(Transform3D(Basis().scaled(Vector3.ONE * randf_range(0.7, 1.3)), p))
-				_flower_cols.append(col.lerp(Color.WHITE, randf() * 0.25))
-	var sm := SphereMesh.new()
-	sm.radius = 0.07
-	sm.height = 0.14
-	sm.radial_segments = 8
-	sm.rings = 4
+				var s := randf_range(0.7, 1.2)
+				_flower_xf.append(Transform3D(Basis(Vector3.UP, randf() * TAU).scaled(Vector3.ONE * s), p))
+				_flower_cols.append(Color(1, 1, 1).lerp(FLOWER_PALETTE.pick_random(), 0.15))
+	# The rim flowers from the hanging gardens were added with a little height:
+	# put them back on the ground.
+	for k in _flower_xf.size():
+		var t: Transform3D = _flower_xf[k]
+		var isl := island_at(t.origin)
+		if isl >= 0:
+			t.origin.y = island_center(isl).y
+		_flower_xf[k] = t
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_colors = true
-	mm.mesh = sm
+	mm.mesh = _card_mesh(1.3, 0.6)
 	mm.instance_count = _flower_xf.size()
 	for k in _flower_xf.size():
 		mm.set_instance_transform(k, _flower_xf[k])
@@ -1585,7 +1661,6 @@ func _build_petals() -> void:
 
 
 func _build_distant() -> void:
-	var cap_mat := _mat(Color(0.25, 0.42, 0.32), 0.95)
 	for i in 10:
 		var a := TAU * i / 10.0 + randf_range(-0.25, 0.25)
 		var dist := randf_range(170.0, 290.0)
@@ -1593,20 +1668,10 @@ func _build_distant() -> void:
 		var root := Node3D.new()
 		root.position = CENTER + Vector3(cos(a) * dist, y, sin(a) * dist)
 		add_child(root)
+		var k := randi_range(1, 5)
 		var size := randf_range(5.0, 14.0)
-		var cone := CylinderMesh.new()
-		cone.top_radius = size
-		cone.bottom_radius = size * 0.12
-		cone.height = size * 1.8
-		cone.radial_segments = 10
-		_mesh(root, cone, _dark, Vector3(0, -size * 0.9, 0))
-		var cap := CylinderMesh.new()
-		cap.top_radius = size - 0.2
-		cap.bottom_radius = size - 0.2
-		cap.height = 0.2
-		cap.radial_segments = 24
-		_mesh(root, cap, cap_mat, Vector3(0, 0.05, 0))
-		for k in randi_range(1, 3):
+		_model("res://models/island_%d.glb" % k, root, Vector3.ZERO, Vector3(0, randf() * TAU, 0), Vector3.ONE * size / island_radius(k))
+		for t in randi_range(1, 3):
 			var ta := randf() * TAU
 			var tr := randf() * size * 0.5
 			make_tree(root, Vector3(cos(ta) * tr, 0.0, sin(ta) * tr), randf_range(0.9, 1.6), false)
@@ -1623,6 +1688,19 @@ func _build_clouds() -> void:
 		var mi := _mesh(self, pm, m, Vector3(CENTER.x, float(layer[0]), CENTER.z))
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		cloud_mats.append(m)
+	# Wisps of cloud drifting through the abyss under the islands.
+	for layer in [[-26.0, 0.006, 0.1], [-42.0, 0.0045, 0.06]]:
+		var m := _shader_mat(CLOUD_SHADER)
+		m.set_shader_parameter("noise_tex", _noise_tex)
+		m.set_shader_parameter("scale", float(layer[1]))
+		m.set_shader_parameter("ring", 0.0)
+		m.set_shader_parameter("sparse", float(layer[2]))
+		var pm := PlaneMesh.new()
+		pm.size = Vector2(900, 900)
+		var mi := _mesh(self, pm, m, Vector3(CENTER.x, float(layer[0]), CENTER.z))
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		cloud_mats.append(m)
+		abyss_mats.append(m)
 
 
 func _build_underworld() -> void:
@@ -1785,18 +1863,21 @@ func update_time(dusk: float) -> void:
 	sky_mat.set_shader_parameter("moon_dir", moon.global_transform.basis.z)
 	env.ambient_light_color = _tri_c(Color(0.75, 0.68, 0.7), Color(0.5, 0.38, 0.5), Color(0.16, 0.18, 0.34), dusk)
 	env.ambient_light_energy = lerpf(1.0, 1.25, night)
-	env.fog_light_color = _tri_c(Color(0.95, 0.72, 0.6), Color(0.72, 0.38, 0.45), Color(0.06, 0.07, 0.16), dusk)
+	env.fog_light_color = _tri_c(Color(0.62, 0.7, 0.82), Color(0.6, 0.45, 0.6), Color(0.05, 0.07, 0.15), dusk)
 	env.volumetric_fog_albedo = _tri_c(Color(1.0, 0.85, 0.75), Color(0.9, 0.6, 0.65), Color(0.35, 0.4, 0.7), dusk)
 	env.volumetric_fog_emission = Color(0.02, 0.02, 0.05) * night
 	for m in cloud_mats:
 		m.set_shader_parameter("top_col", _tri_c(Color(1.0, 0.82, 0.7), Color(1.0, 0.5, 0.45), Color(0.12, 0.12, 0.25), dusk))
 		m.set_shader_parameter("shade_col", _tri_c(Color(0.65, 0.5, 0.65), Color(0.4, 0.22, 0.4), Color(0.03, 0.03, 0.08), dusk))
 	grass_mat.set_shader_parameter("night", night)
+	flower_mat.set_shader_parameter("night", night)
+	for m in abyss_mats:
+		m.set_shader_parameter("opacity", lerpf(0.7, 0.2, night))
 	vine_mat.set_shader_parameter("night", night)
 	underglow_mat.set_shader_parameter("night", night)
 	for m in water_mats:
 		m.set_shader_parameter("night", night)
-	flower_mat.set_shader_parameter("glow", lerpf(0.5, 2.4, night))
+	flower_mat.set_shader_parameter("glow", lerpf(0.0, 1.6, night))
 	for g in glow_mats:
 		g[0].emission_energy_multiplier = lerpf(float(g[1]), float(g[2]), night)
 	for l in lamp_lights:

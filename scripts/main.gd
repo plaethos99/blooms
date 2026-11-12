@@ -94,6 +94,17 @@ func _ready() -> void:
 			s.light = 85.0
 	world.update_time(frac())
 	_update_shrines()
+	if args.has("cam"):
+		# Debug camera: --cam=x,y,z,look_x,look_y,look_z
+		var v: PackedFloat64Array = PackedFloat64Array(Array(String(args["cam"]).split(",")).map(func(t): return float(t)))
+		var dc := Camera3D.new()
+		dc.far = 2500.0
+		dc.fov = 60.0
+		add_child(dc)
+		dc.global_position = Vector3(v[0], v[1], v[2])
+		dc.look_at(Vector3(v[3], v[4], v[5]))
+		dc.current = true
+		hud.visible = false
 	if args.has("overview"):
 		var c := Camera3D.new()
 		c.far = 2500.0
@@ -676,7 +687,7 @@ func _log_status() -> void:
 	for s in survivors:
 		var tag := "esc" if s.escaped else ("%d" % int(s.light) if s.alive else ("F" if s.fell else "X"))
 		parts.append("%s:%s%s" % [s.display_name, tag, "*" if s.tool_swings > 0 else ""])
-	print("t=%03d hollows=%d blooms=%d | %s" % [int(time_left), _active_hollows(), _list("bloom").size(), " ".join(PackedStringArray(parts))])
+	print("t=%03d fps=%d hollows=%d blooms=%d | %s" % [int(time_left), Engine.get_frames_per_second(), _active_hollows(), _list("bloom").size(), " ".join(PackedStringArray(parts))])
 
 
 func _unhandled_input(event: InputEvent) -> void:

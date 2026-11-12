@@ -182,6 +182,27 @@ Balance (all AI, player on autopilot): **Normal 2.9 escapes per round** (12 roun
 stdev 1.4), **Gentle 2.2** with the player escaping 5/8. About 6 of 10 pilgrims fall
 into the Underglow each round, 3 of them pushed.
 
+## Realistic world (v0.7)
+The world now uses photo textures and models made in Blender, matched to six
+reference images. Characters, creatures and gameplay are unchanged.
+
+- **References and textures** were generated in Grok Imagine. Google Flow blocked
+  the requests with "unusual activity". The job files are in `3d/tests/lastlight_world`.
+- **Textures** (`textures/`): cliff, dark rock, meadow grass, mossy stone, marble and
+  bark, each tileable at 1024 px with a normal map. Plus cut-outs for ivy, blossoms,
+  leaves, grass clumps and wildflowers.
+- **Models** (`models/`), built by `build_world.py` in Blender:
+  - seven islands with stratified cliffs and eroded undersides
+  - rock-chunk stepping stones
+  - blossom and leaf trees with photo foliage
+  - a marble arch gate, fluted columns and boulders
+- **Rendering**: rock is textured from three sides, with moss from the models'
+  vertex colours and meadow patches from noise. Grass, flowers and ivy are photo
+  cards that sway in the wind. The look uses AgX tone mapping, height fog that pools
+  in the abyss, and cloud wisps drifting below the islands.
+- **Speed**: 57-60 fps at 1600x900 on a GTX 1050 Ti. Balance is unchanged (2.4
+  escapes per round over 8 simulated rounds).
+
 ## Next steps
 1. Playtest jumping and pushing with real people; tune `scripts/cfg.gd`.
 2. Online multiplayer (Godot high-level multiplayer, server-authoritative).
