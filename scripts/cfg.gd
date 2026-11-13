@@ -106,3 +106,58 @@ const COLORS := [
 	Color(0.9, 0.5, 0.8),
 ]
 const TOOL_NAMES := ["Pilgrim's Staff", "Bell Hammer", "Lantern Pole", "Broken Oar"]
+
+# ---------------------------------------------------------------- Level 1: The Gauntlet
+# A straight race in parallel lanes (3 now, 5 later for online play), four phases:
+# fire blades -> moving steps -> monster arena -> rope chasm -> the Sun Gate.
+const COURSE_TIME := 240.0 # 4 minutes
+const LANES := 3
+const LANE_W := 14.0 # metres between lane centres
+const COURSE_START_LIGHT := 60.0
+const LAMP_LIGHT := 100.0
+const COURSE_BLADE_DAMAGE := 10.0 # fire blades burn more than plain steel
+const RESPAWN_DELAY := 1.2 # seconds between falling and reappearing at the checkpoint
+const RESPAWN_LIGHT := 45.0 # at least this much light after a respawn
+const KILLS_NEEDED := 4 # monsters each pilgrim must bring down to leave the arena
+const KILL_HEAL := 6.0
+const MEDAL_GOLD := 130.0 # finish times (seconds from GO)
+const MEDAL_SILVER := 175.0
+
+# Moving steps.
+const STEP_BOB := 0.9 # metres up and down
+const STEP_SWAY := 1.3 # metres side to side
+const STEP_PERIOD := Vector2(3.0, 3.8)
+const FERRY_DWELL := 1.6 # seconds a lane-crossing step waits in each lane
+const FERRY_MOVE := 1.8 # seconds it takes to slide to the next lane
+
+# Weapons.
+const AXE_REACH := 2.9
+const AXE_DAMAGE := 3
+const AXE_COOLDOWN := 0.5
+const ARROW_SPEED := 42.0
+const ARROW_DAMAGE := 1
+const ARROW_COOLDOWN := 0.42
+const SAW_SPEED := 22.0
+const SAW_RANGE := 13.0
+const SAW_DAMAGE := 2
+const AIM_ASSIST := 0.16 # radians: arrows and saws bend towards a monster this close to the aim
+
+# Flying monsters (Duskwings).
+const FLYER_HP := 3
+const FLYER_SPEED := 7.0
+const FLYER_DIVE_SPEED := 15.0
+const FLYER_AIM_TIME := 0.9 # the red glow before a dive
+const FLYER_BITE := 12.0
+const FLYER_KNOCK := 6.0
+const FLYERS_MIN := 3
+const FLYERS_MAX := 8
+
+# Rope chasm.
+const ROPE_RANGE := 15.0
+const ROPE_SPEED := 17.0
+const ROPE_HANG := 2.35 # feet hang this far below the ring
+const RING_SWAY := 2.0
+const GUST_EVERY := Vector2(5.0, 7.5)
+const GUST_WARN := 0.9
+const GUST_TIME := 1.4
+const GUST_PUSH := 9.0

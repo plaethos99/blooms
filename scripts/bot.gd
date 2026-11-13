@@ -1,4 +1,5 @@
 extends "res://scripts/survivor.gd"
+const CourseAI = preload("res://scripts/course_ai.gd")
 ## AI pilgrim. Same rules as the player; navigates with a NavigationAgent3D, jumps the
 ## gaps between stepping stones, races for Sunflare drops and shoves rivals.
 
@@ -16,7 +17,8 @@ var goal_obj_id := 0
 var blocked := {} # pickup instance id -> time (msec) until which we ignore it
 var stuck_count := 0
 var _air_dir := Vector3.ZERO
-var blade_margin := 0.5 # how much room a bot leaves a swinging blade (careless bots get hit)
+var blade_margin := 0.5
+var hes_t := -1.0 # Level 1: a moment of hesitation at each edge, like a person # how much room a bot leaves a swinging blade (careless bots get hit)
 
 
 func autopilot_flag() -> bool:
@@ -58,6 +60,9 @@ func _set_goal(p: Vector3, obj = null) -> void:
 
 
 func _controller(delta: float) -> void:
+	if main.is_course:
+		CourseAI.control(self, delta)
+		return
 	think_t -= delta
 	if think_t <= 0.0:
 		think_t = randf_range(0.18, 0.32)

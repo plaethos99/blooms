@@ -16,6 +16,8 @@ var _look_id := -1
 var _look_last := Vector2.ZERO
 var _held := {} # touch index -> action name
 var _canvas: Control
+var _glow_action := "" # Level 1: a button that pulses when its hint shows
+var _glow_t := 0.0
 
 
 func _ready() -> void:
@@ -37,7 +39,14 @@ func _buttons() -> Array:
 	if main.state == "intro":
 		var cx := s.x * 0.5
 		var y := s.y - 58.0
+		if main.is_course:
+			return [
+				["normal", "PLAY", Vector2(cx, y), 56.0],
+				["watch", "WATCH AI", Vector2(cx + 230, y), 46.0],
+				["classic", "CLASSIC", Vector2(cx - 230, y), 46.0],
+			]
 		return [
+			["level1", "LEVEL 1", Vector2(cx, y - 120), 52.0],
 			["gentle", "GENTLE", Vector2(cx - 230, y), 50.0],
 			["normal", "NORMAL", Vector2(cx, y), 50.0],
 			["watch", "WATCH AI", Vector2(cx + 230, y), 50.0],
@@ -46,6 +55,16 @@ func _buttons() -> Array:
 		return [["again", "PLAY AGAIN", Vector2(s.x * 0.5, s.y - 80.0), 70.0]]
 	if not main.player.alive or main.player.escaped:
 		return [["again", "RESTART", Vector2(s.x * 0.5, s.y - 70.0), 52.0]]
+	if main.is_course:
+		var p = main.player
+		var list := [["jump", "JUMP", Vector2(s.x - 110, s.y - 115), 66.0], ["push", "PUSH", Vector2(s.x - 250, s.y - 80), 42.0]]
+		if p.weapon != "":
+			list.append(["swing", "HIT", Vector2(s.x - 100, s.y - 265), 50.0])
+		if p.weapons.size() >= 2:
+			list.append(["swap", "SWAP", Vector2(s.x - 230, s.y - 200), 40.0])
+		if p.has_rope and p.cphase == 4:
+			list.append(["brace", "ROPE", Vector2(s.x - 250, s.y - 300), 52.0])
+		return list
 	return [
 		["jump", "JUMP", Vector2(s.x - 110, s.y - 115), 66.0],
 		["push", "PUSH", Vector2(s.x - 250, s.y - 80), 46.0],
@@ -117,6 +136,10 @@ func _press_button(idx: int, action: String) -> void:
 			main.start_match(action == "gentle")
 		"again":
 			main.restart()
+		"level1":
+			main.go_level1()
+		"classic":
+			main.go_classic()
 		_:
 			if main.player.autopilot:
 				main.player.set_autopilot(false)
@@ -137,8 +160,15 @@ func _on_release(idx: int) -> void:
 	_canvas.queue_redraw()
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	_glow_t = maxf(0.0, _glow_t - delta)
 	_canvas.queue_redraw()
+
+
+## Level 1: make one button pulse for a few seconds (when its hint is shown).
+func highlight(action: String) -> void:
+	_glow_action = action
+	_glow_t = 4.0
 
 
 func _draw_controls() -> void:
@@ -157,12 +187,14 @@ func _draw_controls() -> void:
 				"push":
 					ready = p.shove_cd <= 0.0
 				"swing":
-					ready = p.tool_swings > 0
+					ready = p.tool_swings > 0 or main.is_course
 				"brace":
 					ready = p.light >= 70.0 and p.brace_ready
 		var fill := Color(1.0, 0.85, 0.5, 0.42 if held else 0.22) if ready else Color(0.5, 0.48, 0.55, 0.18)
 		_canvas.draw_circle(c, r, fill)
 		_canvas.draw_arc(c, r, 0.0, TAU, 48, Color(1.0, 0.9, 0.7, 0.75 if ready else 0.3), 3.0, true)
+		if _glow_t > 0.0 and b[0] == _glow_action:
+			_canvas.draw_arc(c, r + 8.0 + 4.0 * sin(_glow_t * 8.0), 0.0, TAU, 48, Color(1.0, 0.85, 0.4, 0.8), 4.0, true)
 		var fs := 20 if r > 50.0 else 16
 		var lbl: String = b[1]
 		if playing and b[0] == "flare":

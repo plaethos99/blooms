@@ -356,6 +356,7 @@ void fragment() {
 }
 """
 
+var area_mid := CENTER # middle of the play area: sky, sea and particles are centred here
 var nav_region: NavigationRegion3D
 var env: Environment
 var sky_mat: ShaderMaterial
@@ -491,16 +492,26 @@ func _tri_c(a: Color, b: Color, c: Color, t: float) -> Color:
 	return b.lerp(c, t * 2.0 - 1.0)
 
 
+## The island table ([name, x, z, top height, radius]); Level 1 replaces it with its own.
+func _isle(i: int) -> Array:
+	return ISLANDS[i]
+
+
+func isle_count() -> int:
+	return ISLANDS.size()
+
+
 func island_center(i: int) -> Vector3:
-	return Vector3(float(ISLANDS[i][1]), float(ISLANDS[i][3]), float(ISLANDS[i][2]))
+	var d := _isle(i)
+	return Vector3(float(d[1]), float(d[3]), float(d[2]))
 
 
 func island_radius(i: int) -> float:
-	return float(ISLANDS[i][4])
+	return float(_isle(i)[4])
 
 
 func island_name(i: int) -> String:
-	return String(ISLANDS[i][0])
+	return String(_isle(i)[0])
 
 
 func is_clear(p: Vector3, rad: float) -> bool:
@@ -561,7 +572,7 @@ func has_ground(p: Vector3, feet_y: float, depth := 1.6) -> bool:
 
 
 func island_at(p: Vector3) -> int:
-	for i in ISLANDS.size():
+	for i in isle_count():
 		var c := island_center(i)
 		if Vector2(p.x - c.x, p.z - c.z).length() < island_radius(i) + 0.4 and p.y > c.y - 3.0 and p.y < c.y + 5.0:
 			return i
@@ -582,7 +593,7 @@ func nearest_landing(p: Vector3, reach := 6.0, climb := 1.8):
 			if d < best_d:
 				best_d = d
 				best = s
-	for i in ISLANDS.size():
+	for i in isle_count():
 		var c := island_center(i)
 		if c.y > p.y + climb:
 			continue
@@ -631,7 +642,7 @@ func place_name(p: Vector3) -> String:
 func _pick_island(include_gate: bool) -> int:
 	var total := 0.0
 	var w: Array = []
-	for i in ISLANDS.size():
+	for i in isle_count():
 		var x := island_radius(i) * island_radius(i)
 		if i == GATE_ISLAND:
 			x *= 0.35 if include_gate else 0.0
@@ -948,7 +959,7 @@ func _plan_bridges() -> void:
 
 
 func _build_islands() -> void:
-	for i in ISLANDS.size():
+	for i in isle_count():
 		var c := island_center(i)
 		var r := island_radius(i)
 		# The sculpted island: grass top at its height, cliffs, and the rock it floats on.
@@ -1101,8 +1112,16 @@ func _lamp(pos: Vector3) -> void:
 	lamp_lights.append(l)
 
 
+func _gate_spot() -> Vector3:
+	return island_center(GATE_ISLAND)
+
+
+func _gate_isle() -> int:
+	return GATE_ISLAND
+
+
 func _build_gate() -> void:
-	var c := island_center(GATE_ISLAND)
+	var c := _gate_spot()
 	var top := c.y
 	gate_pos = c
 	var gold := _mat(Color(0.95, 0.72, 0.32), 0.3, Color(1.0, 0.68, 0.3), 1.2)
@@ -1157,7 +1176,7 @@ func _build_gate() -> void:
 	# Colonnade around the gate.
 	for k in 10:
 		var a := TAU * float(k) / 10.0 + 0.15
-		if _bridge_clearance(GATE_ISLAND, a) < 22.0:
+		if _bridge_clearance(_gate_isle(), a) < 22.0:
 			continue
 		_column(c + Vector3(cos(a) * 8.5, 0, sin(a) * 8.5), 3.8, true)
 
@@ -1459,7 +1478,7 @@ func _add_vine(top: Vector3, ang: float, width: float, length: float) -> void:
 
 
 func _build_hanging_gardens() -> void:
-	for i in ISLANDS.size():
+	for i in isle_count():
 		var c := island_center(i)
 		var r := island_radius(i)
 		var steps := int(TAU * r / 0.85)
@@ -1548,7 +1567,7 @@ func _build_grass() -> void:
 	grass_mat.set_shader_parameter("card_tint", Color(0.55, 0.85, 0.4))
 	var xf: Array = []
 	var cols: Array = []
-	for i in ISLANDS.size():
+	for i in isle_count():
 		var c := island_center(i)
 		var r := island_radius(i)
 		for k in int(r * r * 3.2):
@@ -1557,7 +1576,7 @@ func _build_grass() -> void:
 			var p := c + Vector3(cos(a) * rr, 0, sin(a) * rr)
 			if _in_pool(p, 0.4):
 				continue
-			if i == GATE_ISLAND and rr < 3.8:
+			if Vector2(p.x - gate_pos.x, p.z - gate_pos.z).length() < 3.8 and absf(p.y - gate_pos.y) < 2.0:
 				continue
 			var s := randf_range(0.6, 1.15)
 			var b := Basis(Vector3.UP, randf() * TAU).scaled(Vector3(s, s * randf_range(0.7, 1.2), s))
@@ -1582,7 +1601,7 @@ func _build_grass() -> void:
 func _build_flowers() -> void:
 	flower_mat = _shader_mat(CARD_SHADER)
 	flower_mat.set_shader_parameter("card", _tex_load("card_flowers"))
-	for i in ISLANDS.size():
+	for i in isle_count():
 		var clusters := int(island_radius(i) * island_radius(i) / 18.0) + 3
 		for k in clusters:
 			var center = island_point(i, 1.0, 0.5)
@@ -1658,7 +1677,7 @@ func _build_fireflies() -> void:
 	fm.emission_energy_multiplier = 6.0
 	dm.material = fm
 	fireflies.draw_pass_1 = dm
-	fireflies.position = CENTER + Vector3(0, 7, 0)
+	fireflies.position = area_mid + Vector3(0, 7, 0)
 	add_child(fireflies)
 
 
@@ -1706,7 +1725,7 @@ func _build_petals() -> void:
 	m.emission_energy_multiplier = 0.3
 	q.material = m
 	ps.draw_pass_1 = q
-	ps.position = CENTER + Vector3(0, 9, 0)
+	ps.position = area_mid + Vector3(0, 9, 0)
 	add_child(ps)
 
 
@@ -1716,11 +1735,11 @@ func _build_distant() -> void:
 		var dist := randf_range(170.0, 290.0)
 		var y := randf_range(-25.0, 30.0)
 		var root := Node3D.new()
-		root.position = CENTER + Vector3(cos(a) * dist, y, sin(a) * dist)
+		root.position = area_mid + Vector3(cos(a) * dist, y, sin(a) * dist)
 		add_child(root)
 		var k := randi_range(1, 5)
 		var size := randf_range(5.0, 14.0)
-		_model("res://models/island_%d.glb" % k, root, Vector3.ZERO, Vector3(0, randf() * TAU, 0), Vector3.ONE * size / island_radius(k))
+		_model("res://models/island_%d.glb" % k, root, Vector3.ZERO, Vector3(0, randf() * TAU, 0), Vector3.ONE * size / float(ISLANDS[k][4]))
 		for t in randi_range(1, 3):
 			var ta := randf() * TAU
 			var tr := randf() * size * 0.5
@@ -1735,7 +1754,7 @@ func _build_clouds() -> void:
 		m.set_shader_parameter("scale", float(layer[1]))
 		var pm := PlaneMesh.new()
 		pm.size = Vector2(1300, 1300)
-		var mi := _mesh(self, pm, m, Vector3(CENTER.x, float(layer[0]), CENTER.z))
+		var mi := _mesh(self, pm, m, Vector3(area_mid.x, float(layer[0]), area_mid.z))
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		cloud_mats.append(m)
 	# Wisps of cloud drifting through the abyss under the islands.
@@ -1747,7 +1766,7 @@ func _build_clouds() -> void:
 		m.set_shader_parameter("sparse", float(layer[2]))
 		var pm := PlaneMesh.new()
 		pm.size = Vector2(900, 900)
-		var mi := _mesh(self, pm, m, Vector3(CENTER.x, float(layer[0]), CENTER.z))
+		var mi := _mesh(self, pm, m, Vector3(area_mid.x, float(layer[0]), area_mid.z))
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		cloud_mats.append(m)
 		abyss_mats.append(m)
@@ -1758,7 +1777,7 @@ func _build_underworld() -> void:
 	underglow_mat.set_shader_parameter("noise_tex", _noise_tex)
 	var sea := PlaneMesh.new()
 	sea.size = Vector2(1600, 1600)
-	var smi := _mesh(self, sea, underglow_mat, Vector3(CENTER.x, UNDERWORLD_Y, CENTER.z))
+	var smi := _mesh(self, sea, underglow_mat, Vector3(area_mid.x, UNDERWORLD_Y, area_mid.z))
 	smi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	for layer in [[-60.0, Color(0.15, 0.6, 0.85), 0.16], [-50.0, Color(0.45, 0.25, 0.9), 0.08]]:
 		var mm := _shader_mat(MIST_SHADER)
@@ -1767,7 +1786,7 @@ func _build_underworld() -> void:
 		mm.set_shader_parameter("strength", layer[2])
 		var pm := PlaneMesh.new()
 		pm.size = Vector2(1200, 1200)
-		var mi := _mesh(self, pm, mm, Vector3(CENTER.x, float(layer[0]), CENTER.z))
+		var mi := _mesh(self, pm, mm, Vector3(area_mid.x, float(layer[0]), area_mid.z))
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	# Crystal spires rising out of the glow.
 	var cmats: Array = []
@@ -1779,7 +1798,7 @@ func _build_underworld() -> void:
 	for k in 46:
 		var a := randf() * TAU
 		var d := randf_range(25.0, 260.0)
-		var base := CENTER + Vector3(cos(a) * d, UNDERWORLD_Y - 6.0, sin(a) * d)
+		var base := area_mid + Vector3(cos(a) * d, UNDERWORLD_Y - 6.0, sin(a) * d)
 		for j in randi_range(1, 3):
 			var h := randf_range(14.0, 42.0) * (1.0 if j == 0 else 0.55)
 			var rad := randf_range(1.5, 4.5) * (1.0 if j == 0 else 0.6)
@@ -1828,7 +1847,7 @@ func _build_underworld() -> void:
 		var orbit := randf_range(30.0, 200.0)
 		var ang := randf() * TAU
 		var by := randf_range(-60.0, -34.0)
-		root.position = CENTER + Vector3(cos(ang) * orbit, by, sin(ang) * orbit)
+		root.position = area_mid + Vector3(cos(ang) * orbit, by, sin(ang) * orbit)
 		jellies.append([root, orbit, ang, randf_range(0.004, 0.012) * (1.0 if randf() < 0.5 else -1.0), by, randf() * TAU])
 	# Spores rising from the glow.
 	var sp := GPUParticles3D.new()
@@ -1872,7 +1891,7 @@ func _build_underworld() -> void:
 	fm.vertex_color_use_as_albedo = true
 	dm.material = fm
 	sp.draw_pass_1 = dm
-	sp.position = Vector3(CENTER.x, UNDERWORLD_Y + 3.0, CENTER.z)
+	sp.position = Vector3(area_mid.x, UNDERWORLD_Y + 3.0, area_mid.z)
 	add_child(sp)
 
 
@@ -2026,7 +2045,7 @@ func _process(delta: float) -> void:
 		var ang: float = j[2]
 		var orbit: float = j[1]
 		var ph: float = j[5]
-		n.position = CENTER + Vector3(cos(ang) * orbit, float(j[4]) + sin(_t * 0.4 + ph) * 2.0, sin(ang) * orbit)
+		n.position = area_mid + Vector3(cos(ang) * orbit, float(j[4]) + sin(_t * 0.4 + ph) * 2.0, sin(ang) * orbit)
 		var pulse := 1.0 + 0.12 * sin(_t * 1.6 + ph)
 		var base_s := n.scale.x / maxf(0.001, float(n.get_meta("pulse", 1.0)))
 		n.set_meta("pulse", pulse)

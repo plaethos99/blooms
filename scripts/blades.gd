@@ -19,6 +19,8 @@ var _steel: StandardMaterial3D
 var _iron: StandardMaterial3D
 var _rune: StandardMaterial3D
 var _blade_mesh: ArrayMesh
+var _fire_steel: StandardMaterial3D
+var _flame_mat: StandardMaterial3D
 var _samples: Array[Vector2] = [] # points along the blade (blade-local) used for hits
 
 
@@ -41,6 +43,17 @@ func build(world) -> void:
 	_rune.emission = Color(1.0, 0.3, 0.15)
 	_rune.emission_energy_multiplier = 1.6
 	_blade_mesh = _make_blade_mesh()
+	# Level 1's blades are on fire: a glowing edge and a trail of flame.
+	_fire_steel = _steel.duplicate()
+	_fire_steel.albedo_color = Color(0.55, 0.42, 0.36)
+	_fire_steel.emission = Color(1.0, 0.42, 0.12)
+	_fire_steel.emission_energy_multiplier = 2.2
+	_flame_mat = StandardMaterial3D.new()
+	_flame_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_flame_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_flame_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	_flame_mat.vertex_color_use_as_albedo = true
+	_flame_mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
 	for k in 9:
 		var x := lerpf(-0.62, 0.62, float(k) / 8.0)
 		var oy := ARC_CY - sqrt(maxf(0.0, ARC_R * ARC_R - x * x))
@@ -51,6 +64,8 @@ func build(world) -> void:
 		var stones: Array = b["stones"]
 		var radii: Array = b["radii"]
 		# The world widened a few random gaps between stones for us; hang a blade in each.
+		# Level 1 gives every gap its own swing (the same in every lane, so racing is fair).
+		var sw: Dictionary = b.get("blade_swing", {})
 		for g in b.get("blade_gaps", []):
 			var k: int = int(g) - 1
 			if k < 0 or k + 1 >= stones.size():
@@ -65,13 +80,23 @@ func build(world) -> void:
 			var r1: float = radii[k + 1]
 			var mid := s0 + dir * (r0 + (dl - r0 - r1) * 0.5)
 			mid.y = maxf(s0.y, s1.y)
-			_add_blade(bi, mid, dir, world)
+			var per := randf_range(Cfg.BLADE_PERIOD.x, Cfg.BLADE_PERIOD.y)
+			var ph := randf() * TAU
+			if sw.has(g):
+				per = float(sw[g][0])
+				ph = float(sw[g][1])
+			_add_blade(bi, mid, dir, world, per, ph, bool(b.get("fire", false)))
+	# Free-hanging blades (Level 1's rope chasm): [mid, dir, period, phase].
+	var extra = world.get("extra_blades")
+	if extra != null:
+		for eb in extra:
+			_add_blade(-1, eb[0], eb[1], world, float(eb[2]), float(eb[3]), true)
 	if main != null and main.args.has("log"):
 		print("BLADES built %d" % blades.size())
 
 
 ## A blade over `mid` (top of the higher stone), swinging across the path `dir`.
-func _add_blade(bi: int, mid: Vector3, dir: Vector3, world) -> void:
+func _add_blade(bi: int, mid: Vector3, dir: Vector3, world, period: float, phase: float, fire := false) -> void:
 	var perp := Vector3(-dir.z, 0, dir.x)
 	var arm: float = Cfg.BLADE_ARM
 	# The blade's middle sweeps through where a jumping pilgrim's body is.
@@ -107,15 +132,54 @@ func _add_blade(bi: int, mid: Vector3, dir: Vector3, world) -> void:
 	_mesh(pivot, collar, _iron, Vector3(0, -arm + 0.12, 0), Basis())
 	var blade := MeshInstance3D.new()
 	blade.mesh = _blade_mesh
-	blade.material_override = _steel
+	blade.material_override = _fire_steel if fire else _steel
 	blade.position = Vector3(0, -arm, 0)
 	blade.scale = Vector3.ONE * Cfg.BLADE_SIZE
 	pivot.add_child(blade)
-	var period := randf_range(Cfg.BLADE_PERIOD.x, Cfg.BLADE_PERIOD.y)
+	if fire:
+		_add_flames(pivot, arm)
 	blades.append({
 		"bridge": bi, "pivot": pivot, "pos": pivot_pos, "base": base, "perp": perp, "dir": dir,
-		"mid": mid, "w": TAU / period, "phase": randf() * TAU, "last_s": 0.0,
+		"mid": mid, "w": TAU / period, "phase": phase, "last_s": 0.0, "fire": fire,
 	})
+
+
+## Flames streaming off a blade's edge (world-space particles, so they trail the swing).
+func _add_flames(pivot: Node3D, arm: float) -> void:
+	var ps := GPUParticles3D.new()
+	ps.amount = 70
+	ps.lifetime = 0.55
+	ps.local_coords = false
+	ps.visibility_aabb = AABB(Vector3(-8, -8, -8), Vector3(16, 16, 16))
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	pm.emission_box_extents = Vector3(0.75 * Cfg.BLADE_SIZE, 0.12, 0.05)
+	pm.direction = Vector3(0, 1, 0)
+	pm.spread = 25.0
+	pm.initial_velocity_min = 0.4
+	pm.initial_velocity_max = 1.4
+	pm.gravity = Vector3(0, 2.5, 0)
+	pm.scale_min = 0.6
+	pm.scale_max = 1.3
+	var g := Gradient.new()
+	g.offsets = PackedFloat32Array([0.0, 0.25, 1.0])
+	g.colors = PackedColorArray([Color(3.0, 2.2, 0.8, 1.0), Color(2.6, 0.9, 0.2, 0.8), Color(0.6, 0.1, 0.05, 0.0)])
+	var gt := GradientTexture1D.new()
+	gt.gradient = g
+	pm.color_ramp = gt
+	ps.process_material = pm
+	var q := QuadMesh.new()
+	q.size = Vector2(0.28, 0.28)
+	q.material = _flame_mat
+	ps.draw_pass_1 = q
+	ps.position = Vector3(0, -arm - 0.1 * Cfg.BLADE_SIZE, 0)
+	pivot.add_child(ps)
+	var l := OmniLight3D.new()
+	l.light_color = Color(1.0, 0.5, 0.2)
+	l.light_energy = 1.4
+	l.omni_range = 4.5
+	l.position = Vector3(0, -arm, 0)
+	pivot.add_child(l)
 
 
 func _axis_basis(dir: Vector3) -> Basis:
@@ -261,13 +325,15 @@ func _hit(bl: Dictionary, sv, now: int) -> void:
 	var side: Vector3 = bl["perp"] * (1.0 if vel >= 0.0 else -1.0)
 	var k: float = Cfg.BLADE_KNOCK * (0.4 if sv.bracing and sv.brace_ready else 1.0)
 	sv.shoved(side * k + Vector3(0, Cfg.BLADE_LIFT, 0))
-	sv.lose_light(Cfg.BLADE_DAMAGE)
+	var fire: bool = bl.get("fire", false)
+	sv.lose_light(Cfg.COURSE_BLADE_DAMAGE if fire else Cfg.BLADE_DAMAGE)
 	var p: Vector3 = sv.global_position + Vector3(0, 1.0, 0)
-	main.fx_burst(p, Color(1.0, 0.45, 0.3), 18, false, 4.0)
+	main.fx_burst(p, Color(1.0, 0.55, 0.15) if fire else Color(1.0, 0.45, 0.3), 26 if fire else 18, false, 4.0)
 	main.sfx.play("hit", null if sv.is_player else p, 0.0, randf_range(1.1, 1.3))
 	if sv.is_player:
 		sv.shake = maxf(sv.shake, 0.45)
-		main.hud.toast("A swinging blade caught you!")
+		if not main.is_course:
+			main.hud.toast("A swinging blade caught you!")
 
 
 ## Bots: is it safe to jump from `from` to `to` (taking t_air seconds) right now?

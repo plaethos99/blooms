@@ -31,6 +31,7 @@ var _last_tick := -1
 var _snap_t := 1.0
 var _quit_t := 0.0
 var gentle := false
+var is_course := false # Level 1 (course_main.gd) sets this
 var stats := {"bloom": 0.0, "shard": 0.0, "damage": 0.0, "flare": 0.0, "kills": 0, "blooms": 0, "hollows": 0,
 	"fell": 0, "shoves": 0, "pushed_off": 0, "wyrm": 0, "drops": 0}
 var wyrm
@@ -248,6 +249,7 @@ func _setup_input() -> void:
 	_add_action("jump", [KEY_SPACE])
 	_add_action("push", [KEY_E])
 	_add_action("restart", [KEY_R])
+	_add_action("swap", [KEY_X])
 
 
 func _add_action(action: String, keys: Array, buttons: Array = []) -> void:
@@ -288,6 +290,16 @@ func start_match(gentle_mode := false) -> void:
 		intro_cam = null
 	sfx.play("toll", null, -4.0)
 	feed("The sun is setting. Keep your lantern bright.", C_INFO)
+
+
+## Switch to Level 1, the Gauntlet (a separate scene).
+func go_level1() -> void:
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	get_tree().change_scene_to_file("res://scenes/course.tscn")
+
+
+func go_classic() -> void:
+	pass
 
 
 ## Start a new round (back to the title screen).
@@ -729,6 +741,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.keycode == KEY_P:
 			player.set_autopilot(true)
 		start_match(event.keycode in [KEY_1, KEY_KP_1])
+	elif state == "intro" and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_L and not is_course:
+		go_level1()
 	elif event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_M:
 		hud.toast("Music on" if sfx.toggle_music() else "Music off")
 

@@ -243,6 +243,35 @@ from the Human Base Meshes bundle:
 - Gameplay is unchanged (same collision capsule). Balance: 2.5 escapes per round
   over 8 simulated rounds. The characters cost about 2–4 fps.
 
+## Level 1: The Gauntlet (v0.9)
+A second mode: a straight race instead of open islands. `scenes/course.tscn`,
+`scripts/course.gd` (layout), `course_main.gd` (rules), `course_ai.gd` (bots),
+`course_hud.gd`, `flyer.gd` (monsters), `arms.gd` (weapon models).
+
+- **Lanes.** `Cfg.LANES` parallel lanes (3 now, 5 later for online play), 14 m apart,
+  each built to the same pattern. The ten pilgrims split 4/3/3. Everything that moves
+  is driven by the match clock (`course.sim_t`), so every lane shows the same thing
+  at the same moment, bots can predict it, and online clients will agree for free.
+- **Phase 1, fire blades.** Ten stones; burning pendulums over every other gap (same
+  timing in every lane, the last two swing against each other). A hit burns 10 light.
+  Ends at the **lamp** pedestal: light to 100% and checkpoints unlock.
+- **Phase 2, moving steps.** Twelve steps that bob, sway or zigzag (same in every
+  lane). Two wide gaps hold a lane-crossing step that dwells in each lane in turn.
+  The crossbow, axe and saw float over steps 3, 7 and 11; each pilgrim takes their own.
+- **Phase 3, the arena.** The lanes merge on one wide island. Duskwings circle, glow
+  red, then dive. Crossbow 1 damage, saw 2 (comes back), axe 3; a Duskwing has 3.
+  An axe swung just before a bite cuts it down instead. 4 kills open your lane's
+  gateway and hand you the rope launcher. Unarmed arrivals get a spare axe.
+- **Phase 4, the rope chasm.** Eight rings per lane slide side to side; three blue
+  rings drift between lanes. Right-click zips you to the ring nearest the crosshair
+  (or the next one in your lane). Fire blades swing across the line; gusts push you.
+- **Falling.** Before the lamp: out. After it: back to the start of your current phase
+  after 1.2 s (same for a lantern that burns out).
+- **Screen.** Clock, four phase icons (kills under the arena icon), race place,
+  lantern bar, weapon slots, crosshair only when aiming. A guide wisp floats to your
+  next step; a control icon appears once the first time you need it.
+- **Measured** (AI, 5 races): AI pilgrims finish in 1:24–3:51; medals at 2:10 / 2:55.
+
 ## Next steps
 1. Playtest jumping and pushing with real people; tune `scripts/cfg.gd`.
 2. Online multiplayer (Godot high-level multiplayer, server-authoritative).

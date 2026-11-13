@@ -3,6 +3,7 @@ extends Control
 
 var value := 50.0
 var shown := 50.0
+var marks := [20, 70, 80] # Level 1 shows none
 
 
 func _ready() -> void:
@@ -29,7 +30,7 @@ func _draw() -> void:
 		col = Color(1.0, 0.95, 0.75)
 	draw_rect(Rect2(2, 2, (w - 4.0) * clampf(shown / 100.0, 0.0, 1.0), h - 4.0), col)
 	var font := ThemeDB.fallback_font
-	for m in [20, 70, 80]:
+	for m in marks:
 		var x: float = w * float(m) / 100.0
 		var key: bool = m == 80
 		var mc := Color(1, 1, 1, 0.95) if key else Color(1, 1, 1, 0.45)

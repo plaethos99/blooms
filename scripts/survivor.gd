@@ -2,6 +2,7 @@ extends CharacterBody3D
 ## A pilgrim. Light (health) is shown by their lantern. Subclasses provide _controller().
 
 const Cfg = preload("res://scripts/cfg.gd")
+const Arms = preload("res://scripts/arms.gd")
 
 var main
 var display_name := "Pilgrim"
@@ -47,6 +48,28 @@ var gate_msg_cd := 0.0
 var shake := 0.0
 var is_sprinting := false
 var _step_acc := 0.0
+
+# Level 1 (the Gauntlet).
+var cphase := 1 # 1 blades, 2 steps, 3 arena, 4 rope, 5 to the gate, 6 finished
+var lane := 1
+var checkpoint := Vector3.ZERO
+var kills := 0
+var has_lamp := false
+var has_rope := false
+var weapons := {} # kind -> true
+var weapon := ""
+var attack_cd := 0.0
+var saw_out := false
+var rope_ring := -1
+var rope_state := "" # "", "zip", "hang"
+var hang_t := 0.0
+var invuln := 0.0
+var respawn_t := 0.0
+var finish_time := -1.0
+var place := 0
+var _hang_sway := Vector3.ZERO
+var _rope_mesh: MeshInstance3D
+var _weapon_nodes := {}
 var _flicker_t := 0.0
 
 var visual: Node3D
@@ -110,6 +133,15 @@ func _physics_process(delta: float) -> void:
 	face_lock = maxf(0.0, face_lock - delta)
 	if escaped:
 		return
+	if main.is_course:
+		invuln = maxf(0.0, invuln - delta)
+		attack_cd = maxf(0.0, attack_cd - delta)
+		if respawn_t > 0.0:
+			respawn_t -= delta
+			velocity = Vector3.ZERO
+			if respawn_t <= 0.0:
+				_reappear()
+			return
 	var playing: bool = main.state == "playing"
 	if alive and playing:
 		swing_cd = maxf(0.0, swing_cd - delta)
@@ -134,6 +166,10 @@ func _physics_process(delta: float) -> void:
 		bracing = false
 	if bracing and light < Cfg.BRACE_LIGHT:
 		bracing = false
+	if rope_state != "":
+		_rope_physics(delta)
+		_update_visual()
+		return
 
 	var speed: float = Cfg.WALK_SPEED
 	var moving := move_dir.length() > 0.1
@@ -162,6 +198,8 @@ func _physics_process(delta: float) -> void:
 	velocity.x = lerpf(velocity.x, hv.x, k)
 	velocity.z = lerpf(velocity.z, hv.z, k)
 	velocity.y -= Cfg.GRAVITY * delta
+	if main.is_course and not grounded:
+		velocity += main.world.gust_force(global_position) * delta
 	# Jumping, with a little forgiveness: a press just before landing, or just after
 	# stepping off an edge, still counts.
 	coyote = 0.13 if grounded else coyote - delta
@@ -226,6 +264,9 @@ func _air_jump(hv: Vector3, moving: bool) -> void:
 
 
 func _fall_into_abyss() -> void:
+	if main.is_course and alive and cphase >= 2:
+		begin_respawn()
+		return
 	fell = true
 	if alive:
 		cause = "fell"
@@ -238,8 +279,10 @@ func push(v: Vector3) -> void:
 
 ## A hard push (a shove, a bite, a blast): takes effect at once, even in mid-air.
 func shoved(v: Vector3, by = null) -> void:
-	if not alive or escaped:
+	if not alive or escaped or respawn_t > 0.0:
 		return
+	if rope_state != "":
+		rope_release(false)
 	knock = Vector3(v.x, 0.0, v.z)
 	velocity.x = v.x
 	velocity.z = v.z
@@ -276,7 +319,11 @@ func lose_light(amount: float) -> void:
 		main.sfx.play("hurt", null, -2.0, randf_range(0.9, 1.1))
 		shake = maxf(shake, 0.35)
 	if light <= 0.0:
-		collapse()
+		if main.is_course and cphase >= 2:
+			light = 1.0
+			begin_respawn()
+		else:
+			collapse()
 
 
 func receive_bite(h, dmg: float) -> void:
@@ -421,6 +468,8 @@ func _animate() -> void:
 		name = "fall" if fell else ""
 	elif _oneshot_t > 0.0:
 		return
+	elif rope_state != "":
+		name = "jump"
 	elif not is_on_floor() and velocity.y > 1.0:
 		name = "jump"
 	elif not is_on_floor() and velocity.y < -4.0:
@@ -547,6 +596,33 @@ func _build_visual() -> void:
 	tip.outer_radius = 0.12
 	_add_mesh(tool_pivot, tip, gold, Vector3(0, 0.92, 0), Vector3(PI / 2.0, 0, 0))
 	tool_pivot.visible = false
+	# Level 1 weapons, in the same hand.
+	var wp := Node3D.new()
+	wp.position = Vector3(0, 0.04, 0)
+	wp.rotation.x = PI / 2.0
+	hand_r.add_child(wp)
+	for kind in ["axe", "saw", "bow"]:
+		var n := Arms.make(kind)
+		n.visible = false
+		wp.add_child(n)
+		_weapon_nodes[kind] = n
+	_rope_mesh = MeshInstance3D.new()
+	var rc := CylinderMesh.new()
+	rc.top_radius = 0.02
+	rc.bottom_radius = 0.02
+	rc.height = 1.0
+	rc.radial_segments = 5
+	_rope_mesh.mesh = rc
+	var rmat := StandardMaterial3D.new()
+	rmat.albedo_color = Color(0.85, 0.72, 0.5)
+	rmat.emission_enabled = true
+	rmat.emission = Color(1.0, 0.75, 0.4)
+	rmat.emission_energy_multiplier = 0.8
+	_rope_mesh.material_override = rmat
+	_rope_mesh.top_level = true
+	_rope_mesh.visible = false
+	_rope_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_rope_mesh)
 
 	var tm := TorusMesh.new()
 	tm.inner_radius = 0.7
@@ -569,3 +645,129 @@ func _build_visual() -> void:
 	add_child(name_label)
 	if is_player:
 		name_label.visible = false
+
+
+# ---------------------------------------------------------------- Level 1
+
+func give_weapon(kind: String) -> void:
+	weapons[kind] = true
+	select_weapon(kind)
+
+
+func select_weapon(kind: String) -> void:
+	if not weapons.has(kind) or kind == weapon:
+		return
+	weapon = kind
+	for k in _weapon_nodes:
+		_weapon_nodes[k].visible = k == kind
+	tool_pivot.visible = false
+
+
+func cycle_weapon(step: int) -> void:
+	var order := ["bow", "axe", "saw"]
+	var owned: Array = []
+	for k in order:
+		if weapons.has(k):
+			owned.append(k)
+	if owned.size() < 2:
+		return
+	var i := owned.find(weapon)
+	select_weapon(owned[posmod(i + step, owned.size())])
+
+
+## Fire the rope at ring i: zip up to it, then hang.
+func rope_fire(i: int) -> void:
+	if i < 0 or not has_rope or not alive:
+		return
+	rope_ring = i
+	rope_state = "zip"
+	hang_t = 0.0
+	knock = Vector3.ZERO
+	air_jumps = Cfg.AIR_JUMPS
+	_rope_mesh.visible = true
+	main.sfx.play("swish", null if is_player else global_position, -2.0, 0.6)
+	main.sfx.play("jump", null if is_player else global_position, -8.0, 0.8)
+
+
+## Let go of the rope; with jump, swing forward off it.
+func rope_release(jump := true) -> void:
+	if rope_state == "":
+		return
+	var rv: Vector3 = main.world.ring_vel(rope_ring)
+	rope_state = ""
+	rope_ring = -1
+	_rope_mesh.visible = false
+	air_jumps = Cfg.AIR_JUMPS
+	coyote = 0.0
+	if jump:
+		velocity = Vector3(0, 0, -6.5) + Vector3(0, 5.0, 0) + rv * 0.5
+		main.sfx.play("jump", null if is_player else global_position, -6.0, 1.1)
+	else:
+		velocity = rv
+
+
+func _rope_physics(delta: float) -> void:
+	var w = main.world
+	var hang: Vector3 = w.ring_hang(rope_ring)
+	var gust: Vector3 = w.gust_force(global_position)
+	facing = Vector3(0, 0, -1)
+	if rope_state == "zip":
+		var to := hang - global_position
+		var d := to.length()
+		var step: float = Cfg.ROPE_SPEED * delta
+		if d <= step + 0.05:
+			global_position = hang
+			rope_state = "hang"
+			hang_t = 0.0
+			_hang_sway = Vector3.ZERO
+		else:
+			global_position += to / d * step + gust * delta * 0.3
+			velocity = to / d * Cfg.ROPE_SPEED
+	else:
+		hang_t += delta
+		_hang_sway = (_hang_sway.lerp(Vector3.ZERO, minf(1.0, delta * 1.5)) + gust * delta * 0.25).limit_length(1.4)
+		global_position = hang + _hang_sway + Vector3(0, _hang_sway.length_squared() * 0.15, 0)
+		velocity = w.ring_vel(rope_ring)
+	# The rope, from the hand up to the ring.
+	var a := global_position + Vector3(0, 1.75, 0)
+	var b: Vector3 = w.ring_pos(rope_ring) - Vector3(0, 0.45, 0)
+	var dl := b - a
+	var rl := maxf(0.05, dl.length())
+	var y := dl / rl
+	var x := y.cross(Vector3(0, 0, 1))
+	if x.length() < 0.01:
+		x = Vector3(1, 0, 0)
+	x = x.normalized()
+	_rope_mesh.global_transform = Transform3D(Basis(x, y * rl, x.cross(y)), (a + b) * 0.5)
+	if global_position.y < main.world.FALL_Y:
+		_fall_into_abyss()
+
+
+## Fell (or burned out) after the first checkpoint: disappear, then come back there.
+func begin_respawn() -> void:
+	if respawn_t > 0.0:
+		return
+	if rope_state != "":
+		rope_state = ""
+		rope_ring = -1
+		_rope_mesh.visible = false
+	respawn_t = Cfg.RESPAWN_DELAY
+	velocity = Vector3.ZERO
+	knock = Vector3.ZERO
+	visual.visible = false
+	name_label.visible = false
+	collision_layer = 0
+	main.on_course_respawn(self)
+	global_position = checkpoint + Vector3(0, 0.3, 0)
+
+
+func _reappear() -> void:
+	global_position = checkpoint + Vector3(0, 0.3, 0)
+	velocity = Vector3.ZERO
+	visual.visible = true
+	name_label.visible = not is_player
+	collision_layer = 2
+	light = maxf(light, Cfg.RESPAWN_LIGHT)
+	invuln = 1.5
+	main.fx_ring(global_position + Vector3(0, 0.2, 0), lantern_col, 1.6, 0.5)
+	main.sfx.play("bloom", null if is_player else global_position, -4.0, 0.8)

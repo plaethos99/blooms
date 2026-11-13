@@ -361,6 +361,7 @@ func _build_intro() -> void:
 	intro = _overlay(0.42)
 	var vb: Node = intro.get_child(0).get_child(0)
 	_center_label(vb, "LAST LIGHT", 72, Color(1.0, 0.85, 0.55))
+	_center_label(vb, "NEW:  LEVEL 1 · THE GAUNTLET  —  %s" % ("tap LEVEL 1" if main.touch else "press L"), 22, Color(1.0, 0.7, 0.35))
 	_center_label(vb, "Ten pilgrims. Floating gardens. Five minutes until the sun is gone.", 21, Color(1, 0.92, 0.85))
 	_center_label(vb, " ", 6, Color.WHITE)
 	var steps := [
