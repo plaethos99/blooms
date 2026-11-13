@@ -52,10 +52,25 @@ Shared files changed:
 - `survivor.gd`: Level 1 state, rope, weapons, respawn.
 - `bot.gd`, `player.gd`, `touch.gd`, `hud.gd`, `main.gd`: hooks.
 - `light_meter.gd`: the threshold marks are now optional.
+- `project.godot`: phones use the OpenGL **Compatibility** renderer
+  (`renderer/rendering_method.mobile="gl_compatibility"`); Windows keeps Forward+.
 
-To rebuild a dev tag, run "Build game" by hand on it:
-`gh workflow run build.yml --ref <tag>`. Pushing a `dev*` tag alone does not start a
-build, because the workflow only triggers on `main` and `v*` tags.
+To rebuild, run "Build game" by hand on the branch or a tag:
+`gh workflow run build.yml --ref devnov13-26`. Pushing this branch or a `dev*` tag
+alone does not start a build, because the workflow only triggers on `main` and `v*` tags.
+
+## Android startup failure (dev1326)
+The `dev1326` APK failed at startup on the tester's phone. Nobody could read the phone's
+crash log (no phone connected over USB). What was checked:
+- The APK's own game files, run on desktop with the mobile renderer and the touch
+  layer: they start fine with no script errors.
+- The new APK matches the last `main` APK (same SDK levels, signing and arm64 library)
+  apart from the new Level 1 files.
+
+So the likely cause is the phone's Vulkan graphics driver. The fix switches phones to
+the Compatibility renderer, which runs on almost every Android GPU; both modes were
+checked with it on desktop. If it still fails, connect the phone with USB debugging
+and run `adb logcat -s godot` while starting the app.
 
 ## Status
 - **Verified (AI, headless):** 5 full races with all 10 pilgrims finishing (bots
@@ -65,8 +80,8 @@ build, because the workflow only triggers on `main` and `v*` tags.
   - Phase 1 (blades): 2–4 falls per session before reaching the lamp.
   - **Phase 2 (moving steps) is too hard for a person: 9 respawns in one run, and the
     player never finished.** This is the top thing to tune.
-- **Not tested:** rope aiming and axe timing with a real mouse; the phone layout on a
-  real device.
+- **Not tested:** rope aiming and axe timing with a real mouse; the rebuilt APK
+  (Compatibility renderer) on a real phone.
 
 ## Suggested next steps
 1. Make the moving steps easier to read and land:

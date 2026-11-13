@@ -46,7 +46,7 @@ func _buttons() -> Array:
 				["classic", "CLASSIC", Vector2(cx - 230, y), 46.0],
 			]
 		return [
-			["level1", "LEVEL 1", Vector2(cx, y - 120), 52.0],
+			["level1", "LEVEL 1", Vector2(s.x - 120, 110), 62.0],
 			["gentle", "GENTLE", Vector2(cx - 230, y), 50.0],
 			["normal", "NORMAL", Vector2(cx, y), 50.0],
 			["watch", "WATCH AI", Vector2(cx + 230, y), 50.0],

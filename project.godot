@@ -27,5 +27,6 @@ window/handheld/orientation=4
 
 [rendering]
 
+renderer/rendering_method.mobile="gl_compatibility"
 rendering_device/driver.windows="d3d12"
 textures/vram_compression/import_etc2_astc=true
