@@ -302,7 +302,7 @@ func _spawn_survivors() -> void:
 		var a := TAU * float(i) / Cfg.SURVIVOR_COUNT + PI / 2.0
 		var p := c + Vector3(cos(a) * world.SPAWN_RING, 0.3, sin(a) * world.SPAWN_RING)
 		var s = PlayerScript.new() if i == 0 else BotScript.new()
-		s.setup(self, Cfg.NAMES[i], Cfg.COLORS[i], p)
+		s.setup(self, Cfg.NAMES[i], Cfg.COLORS[i], p, i)
 		add_child(s)
 		s.face_toward(c if i != 0 else p + Vector3(0, 0, -1))
 		survivors.append(s)
@@ -461,6 +461,17 @@ func _physics_process(delta: float) -> void:
 			player.pitch = -0.05
 		if _frames == 40:
 			wyrm.strike(wb, st, Cfg.WYRM_WARN)
+	if args.has("lineup") and _frames == 6:
+		# Debug view: all pilgrims in a row facing the camera (--cam=0,1.3,7,0,1.0,0).
+		for k in survivors.size():
+			var sv = survivors[k]
+			sv.global_position = Vector3(-6.75 + k * 1.5, 0.05, 0.0)
+			sv.velocity = Vector3.ZERO
+			sv.face_toward(sv.global_position + Vector3(0, 0, 1))
+			sv.name_label.visible = false
+		for pk in pickups:
+			if is_instance_valid(pk):
+				pk.queue_free()
 	if args.has("bridgeview") and _frames == 20:
 		var bb: Dictionary = world.bridges[int(args["bridgeview"])]
 		var dirb: Vector3 = bb["dir"]

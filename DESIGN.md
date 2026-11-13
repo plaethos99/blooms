@@ -203,6 +203,32 @@ reference images. Characters, creatures and gameplay are unchanged.
 - **Speed**: 57-60 fps at 1600x900 on a GTX 1050 Ti. Balance is unchanged (2.4
   escapes per round over 8 simulated rounds).
 
+## Pilgrims (v0.8)
+Every pilgrim is now a different person, designed from Grok concept art
+(`3d/tests/lastlight_world/chars/`) and built in Blender by `build_characters.py`
+from the Human Base Meshes bundle:
+
+| Name | Who | Look |
+|---|---|---|
+| You | Wayfarer | Tousled brown hair, amber travelling cloak, linen tunic, satchel |
+| Wren | Scout | Black pixie cut, sky-blue tunic, grey scarf, bracers |
+| Ilya | Monk | Shaved head, crimson robes, sash, prayer beads |
+| Sora | Sky-dancer | Long white ponytail, mint gown with ribbons, gold circlet |
+| Mako | Smith | Big beard, lavender shirt, leather apron, broad build |
+| Juno | Archer | Copper braid, orange jerkin and capelet, quiver |
+| Tamsin | Herbalist | Straw hat, green dress, cream apron |
+| Odile | Noble | Dark bun, silver circlet, long white high-collared coat |
+| Kai | Runner | Spiky hair, cyan headband, sleeveless top, shorts (shortest) |
+| Pell | Storyteller | Long white beard, floppy hat, magenta robe, staff |
+
+- Each pilgrim is one skinned mesh with one material (colours baked into the mesh),
+  7,000–9,000 vertices, with a 19-bone skeleton.
+- Eight animations: idle, walk, run (speed-matched), jump, fall, push, swing, brace.
+- The lantern hangs from the left hand and tools sit in the right. Being hurt
+  flashes the whole figure red.
+- Gameplay is unchanged (same collision capsule). Balance: 2.5 escapes per round
+  over 8 simulated rounds. The characters cost about 2–4 fps.
+
 ## Next steps
 1. Playtest jumping and pushing with real people; tune `scripts/cfg.gd`.
 2. Online multiplayer (Godot high-level multiplayer, server-authoritative).

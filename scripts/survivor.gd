@@ -48,7 +48,15 @@ var _step_acc := 0.0
 var _flicker_t := 0.0
 
 var visual: Node3D
-var body_mat: StandardMaterial3D
+var char_index := 0
+var model: Node3D
+var skel: Skeleton3D
+var anim: AnimationPlayer
+var model_meshes: Array = []
+var hurt_mat: StandardMaterial3D
+var _hurt_on := false
+var _oneshot := ""
+var _oneshot_t := 0.0
 var lantern: OmniLight3D
 var lantern_col := Color(1.0, 0.8, 0.55)
 var bulb_mat: StandardMaterial3D
@@ -57,7 +65,8 @@ var name_label: Label3D
 var brace_ring: MeshInstance3D
 
 
-func setup(p_main, p_name: String, p_tint: Color, p_spawn: Vector3) -> void:
+func setup(p_main, p_name: String, p_tint: Color, p_spawn: Vector3, p_char := 0) -> void:
+	char_index = p_char
 	main = p_main
 	display_name = p_name
 	tint = p_tint
@@ -218,9 +227,7 @@ func try_shove() -> bool:
 	if not alive or escaped or shove_cd > 0.0:
 		return false
 	shove_cd = Cfg.SHOVE_COOLDOWN
-	var tw := create_tween()
-	tw.tween_property(visual, "position", facing * 0.35, 0.08)
-	tw.tween_property(visual, "position", Vector3.ZERO, 0.2)
+	play_once("push", 0.42)
 	main.do_shove(self)
 	return true
 
@@ -287,11 +294,9 @@ func _use_swing() -> void:
 	tool_swings -= 1
 	swing_cd = Cfg.SWING_COOLDOWN
 	main.sfx.play("swing", null if is_player else global_position, -2.0, randf_range(0.9, 1.15))
-	var tw := create_tween()
-	tw.tween_property(tool_pivot, "rotation:x", 1.7, 0.1)
-	tw.tween_property(tool_pivot, "rotation:x", -0.25, 0.25)
+	play_once("swing", 0.5)
 	if tool_swings <= 0:
-		tw.tween_callback(func(): tool_pivot.visible = false)
+		get_tree().create_timer(0.4).timeout.connect(func(): tool_pivot.visible = false)
 		if is_player:
 			main.hud.toast("Your %s broke." % tool_name)
 		tool_name = ""
@@ -351,8 +356,64 @@ func _update_visual() -> void:
 	lantern.light_energy = (0.25 + 2.3 * lf) * flick if alive else 0.0
 	lantern.omni_range = 2.5 + 7.5 * lf
 	bulb_mat.emission_energy_multiplier = (0.4 + 6.0 * lf) * flick if alive else 0.0
-	body_mat.emission_energy_multiplier = hurt_flash * 2.0
 	brace_ring.visible = alive and bracing and brace_ready
+	# A red glow over the whole character when hurt.
+	var want := hurt_flash > 0.02
+	if want != _hurt_on:
+		_hurt_on = want
+		for m in model_meshes:
+			m.material_overlay = hurt_mat if want else null
+	if want:
+		hurt_mat.albedo_color.a = hurt_flash * 0.55
+	_animate()
+
+
+func p_debug_flag(n: String) -> bool:
+	return main.args.has(n)
+
+
+## Plays an action once (push, swing), over whatever the legs are doing.
+func play_once(name: String, dur: float) -> void:
+	_oneshot = name
+	_oneshot_t = dur
+	if anim and anim.has_animation(name):
+		anim.play(name, 0.08)
+		anim.speed_scale = 1.0
+
+
+func _animate() -> void:
+	if anim == null:
+		return
+	var dt := get_physics_process_delta_time()
+	_oneshot_t = maxf(0.0, _oneshot_t - dt)
+	var name := "idle"
+	var spd := Vector2(velocity.x, velocity.z).length()
+	var scale := 1.0
+	if escaped:
+		return
+	if not alive:
+		name = "fall" if fell else ""
+	elif _oneshot_t > 0.0:
+		return
+	elif not is_on_floor() and velocity.y > 1.0:
+		name = "jump"
+	elif not is_on_floor() and velocity.y < -4.0:
+		name = "fall"
+	elif bracing:
+		name = "brace"
+	elif spd > 5.8:
+		name = "run"
+		scale = spd / 7.0
+	elif spd > 0.6:
+		name = "walk"
+		scale = clampf(spd / 4.0, 0.5, 1.4)
+	if name == "":
+		if anim.is_playing():
+			anim.pause()
+		return
+	if anim.current_animation != name:
+		anim.play(name, 0.18)
+	anim.speed_scale = scale
 
 
 func _add_mesh(parent: Node, mesh: Mesh, mat: Material, pos: Vector3, rot := Vector3.ZERO) -> MeshInstance3D:
@@ -368,58 +429,66 @@ func _add_mesh(parent: Node, mesh: Mesh, mat: Material, pos: Vector3, rot := Vec
 func _build_visual() -> void:
 	visual = Node3D.new()
 	add_child(visual)
-	body_mat = StandardMaterial3D.new()
-	body_mat.albedo_color = tint
-	body_mat.roughness = 0.75
-	body_mat.emission_enabled = true
-	body_mat.emission = Color(1.0, 0.1, 0.1)
-	body_mat.emission_energy_multiplier = 0.0
-	var robe := CylinderMesh.new()
-	robe.top_radius = 0.22
-	robe.bottom_radius = 0.48
-	robe.height = 1.25
-	robe.radial_segments = 12
-	_add_mesh(visual, robe, body_mat, Vector3(0, 0.62, 0))
-	var chest := SphereMesh.new()
-	chest.radius = 0.3
-	chest.height = 0.55
-	_add_mesh(visual, chest, body_mat, Vector3(0, 1.25, 0))
-	var skin := StandardMaterial3D.new()
-	skin.albedo_color = Color(0.96, 0.84, 0.72)
-	skin.roughness = 0.6
-	var head := SphereMesh.new()
-	head.radius = 0.19
-	head.height = 0.38
-	_add_mesh(visual, head, skin, Vector3(0, 1.62, 0.04))
-	var hood_mat := StandardMaterial3D.new()
-	hood_mat.albedo_color = tint.darkened(0.35)
-	hood_mat.roughness = 0.9
-	var hood := SphereMesh.new()
-	hood.radius = 0.24
-	hood.height = 0.5
-	_add_mesh(visual, hood, hood_mat, Vector3(0, 1.68, -0.07))
+	# The pilgrim: a rigged, animated model made in Blender
+	# (3d/tests/lastlight_world/scripts/build_characters.py), one per name.
+	var scene: PackedScene = load("res://models/chars/char_%d.glb" % char_index)
+	model = scene.instantiate()
+	visual.add_child(model)
+	skel = model.find_children("*", "Skeleton3D", true, false)[0]
+	anim = model.find_children("*", "AnimationPlayer", true, false)[0]
+	for n in ["idle", "walk", "run", "fall", "brace"]:
+		if anim.has_animation(n):
+			anim.get_animation(n).loop_mode = Animation.LOOP_LINEAR
+	anim.play("idle")
+	anim.seek(randf() * 1.5)
+	if p_debug_flag("nochars"):
+		model.visible = false
+	if p_debug_flag("noanim"):
+		anim.active = false
+	var look := StandardMaterial3D.new()
+	look.vertex_color_use_as_albedo = true
+	look.vertex_color_is_srgb = true
+	look.roughness = 0.72
+	look.rim_enabled = true
+	look.rim = 0.25
+	look.rim_tint = 0.6
+	for m in model.find_children("*", "MeshInstance3D", true, false):
+		model_meshes.append(m)
+		m.material_override = look
+		if p_debug_flag("noshadow"):
+			m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	hurt_mat = StandardMaterial3D.new()
+	hurt_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	hurt_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	hurt_mat.albedo_color = Color(1.0, 0.1, 0.08, 0.0)
+	hurt_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 
 	# Lantern = health.
 	lantern_col = Color(1.0, 0.8, 0.55).lerp(tint, 0.3)
+	# Held in the left hand.
+	var hand_l := BoneAttachment3D.new()
+	hand_l.bone_name = "hand.L"
+	skel.add_child(hand_l)
 	var lr := Node3D.new()
-	lr.position = Vector3(0.38, 1.0, 0.3)
-	visual.add_child(lr)
+	lr.position = Vector3(0, 0.12, -0.02)
+	hand_l.add_child(lr)
 	var frame_mat := StandardMaterial3D.new()
 	frame_mat.albedo_color = Color(0.2, 0.17, 0.15)
 	frame_mat.metallic = 0.6
 	frame_mat.roughness = 0.4
 	var plate := BoxMesh.new()
 	plate.size = Vector3(0.2, 0.04, 0.2)
-	_add_mesh(lr, plate, frame_mat, Vector3(0, 0.14, 0))
-	_add_mesh(lr, plate, frame_mat, Vector3(0, -0.14, 0))
+	plate.size = Vector3(0.14, 0.03, 0.14)
+	_add_mesh(lr, plate, frame_mat, Vector3(0, 0.1, 0))
+	_add_mesh(lr, plate, frame_mat, Vector3(0, -0.1, 0))
 	bulb_mat = StandardMaterial3D.new()
 	bulb_mat.albedo_color = Color(1, 0.92, 0.7)
 	bulb_mat.emission_enabled = true
 	bulb_mat.emission = lantern_col
 	bulb_mat.emission_energy_multiplier = 3.0
 	var bulb := SphereMesh.new()
-	bulb.radius = 0.1
-	bulb.height = 0.22
+	bulb.radius = 0.07
+	bulb.height = 0.16
 	_add_mesh(lr, bulb, bulb_mat, Vector3.ZERO)
 	lantern = OmniLight3D.new()
 	lantern.light_color = lantern_col
@@ -427,17 +496,20 @@ func _build_visual() -> void:
 	lr.add_child(lantern)
 
 	# Tool (hidden until picked up).
+	var hand_r := BoneAttachment3D.new()
+	hand_r.bone_name = "hand.R"
+	skel.add_child(hand_r)
 	tool_pivot = Node3D.new()
-	tool_pivot.position = Vector3(-0.36, 1.0, 0.15)
-	tool_pivot.rotation.x = -0.25
-	visual.add_child(tool_pivot)
+	tool_pivot.position = Vector3(0, 0.06, 0)
+	tool_pivot.rotation.x = PI / 2.0
+	hand_r.add_child(tool_pivot)
 	var wood := StandardMaterial3D.new()
 	wood.albedo_color = Color(0.45, 0.32, 0.22)
 	var staff := CylinderMesh.new()
-	staff.top_radius = 0.035
-	staff.bottom_radius = 0.045
-	staff.height = 1.4
-	_add_mesh(tool_pivot, staff, wood, Vector3(0, 0.35, 0))
+	staff.top_radius = 0.03
+	staff.bottom_radius = 0.035
+	staff.height = 1.2
+	_add_mesh(tool_pivot, staff, wood, Vector3(0, 0.3, 0))
 	var gold := StandardMaterial3D.new()
 	gold.albedo_color = Color(1.0, 0.8, 0.4)
 	gold.metallic = 0.8
@@ -445,9 +517,9 @@ func _build_visual() -> void:
 	gold.emission = Color(1.0, 0.75, 0.35)
 	gold.emission_energy_multiplier = 2.0
 	var tip := TorusMesh.new()
-	tip.inner_radius = 0.08
-	tip.outer_radius = 0.15
-	_add_mesh(tool_pivot, tip, gold, Vector3(0, 1.05, 0), Vector3(PI / 2.0, 0, 0))
+	tip.inner_radius = 0.06
+	tip.outer_radius = 0.12
+	_add_mesh(tool_pivot, tip, gold, Vector3(0, 0.92, 0), Vector3(PI / 2.0, 0, 0))
 	tool_pivot.visible = false
 
 	var tm := TorusMesh.new()
