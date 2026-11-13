@@ -23,6 +23,7 @@ var want_jump := false
 var air_speed := 0.0 # if > 0, horizontal speed through the air (aimed jumps)
 var jump_buffer := 0.0
 var coyote := 0.0
+var air_jumps := 0
 var shove_cd := 0.0
 var fell := false
 var fall_t := 0.0
@@ -30,6 +31,7 @@ var last_shover = null
 var last_shove_ms := 0
 var cause := ""
 var last_wyrm_ms := -100000
+var last_blade_ms := -100000
 var bracing := false
 var brace_ready := true
 var brace_recover := 0.0
@@ -163,9 +165,14 @@ func _physics_process(delta: float) -> void:
 	# Jumping, with a little forgiveness: a press just before landing, or just after
 	# stepping off an edge, still counts.
 	coyote = 0.13 if grounded else coyote - delta
+	if grounded:
+		air_jumps = Cfg.AIR_JUMPS
 	if want_jump:
-		jump_buffer = 0.15
 		want_jump = false
+		if not grounded and coyote <= 0.0 and air_jumps > 0 and alive and playing and not escaped and not fell:
+			_air_jump(hv, moving)
+		else:
+			jump_buffer = 0.15
 	jump_buffer -= delta
 	if jump_buffer > 0.0 and coyote > 0.0 and alive and playing and not escaped:
 		velocity.y = Cfg.JUMP_VEL
@@ -197,6 +204,25 @@ func _physics_process(delta: float) -> void:
 			set_physics_process(false)
 			return
 	_update_visual()
+
+
+## Double jump: a second push in mid-air. Cancels any knockback so you can steer back
+## to the stones after a miss, a shove or a blade.
+func _air_jump(hv: Vector3, moving: bool) -> void:
+	air_jumps -= 1
+	velocity.y = Cfg.AIR_JUMP_VEL
+	knock = Vector3.ZERO
+	if moving:
+		var flat := Vector3(hv.x, 0, hv.z)
+		var v := move_dir.normalized() * maxf(flat.length(), Cfg.WALK_SPEED)
+		velocity.x = v.x
+		velocity.z = v.z
+	else:
+		velocity.x *= 0.3
+		velocity.z *= 0.3
+	jump_buffer = 0.0
+	main.fx_ring(global_position + Vector3(0, 0.1, 0), lantern_col, 1.1, 0.35)
+	main.sfx.play("jump", null if is_player else global_position, -4.0 if is_player else -10.0, randf_range(1.3, 1.45))
 
 
 func _fall_into_abyss() -> void:

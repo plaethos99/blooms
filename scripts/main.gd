@@ -11,6 +11,8 @@ const PickupScript = preload("res://scripts/pickup.gd")
 const AudioScript = preload("res://scripts/audio.gd")
 const TouchScript = preload("res://scripts/touch.gd")
 const WyrmScript = preload("res://scripts/wyrm.gd")
+const BladesScript = preload("res://scripts/blades.gd")
+const Fonts = preload("res://scripts/fonts.gd")
 const DropScript = preload("res://scripts/drop.gd")
 
 const C_INFO := Color(1.0, 0.88, 0.7)
@@ -32,6 +34,7 @@ var gentle := false
 var stats := {"bloom": 0.0, "shard": 0.0, "damage": 0.0, "flare": 0.0, "kills": 0, "blooms": 0, "hollows": 0,
 	"fell": 0, "shoves": 0, "pushed_off": 0, "wyrm": 0, "drops": 0}
 var wyrm
+var blades
 var drops: Array = []
 var next_drop: float = Cfg.DROP_FIRST
 var next_wyrm: float = Cfg.WYRM_FIRST
@@ -60,6 +63,7 @@ var _frames := 0
 
 func _ready() -> void:
 	randomize()
+	Fonts.install()
 	_parse_args()
 	_setup_input()
 	if args.has("bake-audio"):
@@ -76,6 +80,11 @@ func _ready() -> void:
 	wyrm = WyrmScript.new()
 	wyrm.main = self
 	add_child(wyrm)
+	blades = BladesScript.new()
+	blades.name = "Blades"
+	blades.main = self
+	add_child(blades)
+	blades.build(world)
 	if OS.has_feature("mobile") or args.has("touch"):
 		# Phones: on-screen controls, and stop taps from also acting as mouse clicks.
 		Input.emulate_mouse_from_touch = false
@@ -631,7 +640,7 @@ func _check_gate() -> void:
 		if not gate_open:
 			if s.is_player and s.gate_msg_cd <= 0.0:
 				s.gate_msg_cd = 3.0
-				hud.toast("The Sun Gate is sealed until 01:00")
+				hud.toast("The Sun Gate is sealed until %s" % hud._clock_text(Cfg.GATE_OPEN_AT))
 			continue
 		if s.light >= Cfg.ESCAPE_LIGHT:
 			s.escape()
@@ -951,7 +960,9 @@ func on_survivor_down(s) -> void:
 		stats["fell"] += 1
 		var now := Time.get_ticks_msec()
 		var msg := "%s fell into the Underglow." % s.display_name
-		if now - int(s.last_wyrm_ms) < 6000:
+		if now - int(s.last_blade_ms) < 5000:
+			msg = "A swinging blade threw %s into the Underglow!" % ("you" if s.is_player else s.display_name)
+		elif now - int(s.last_wyrm_ms) < 6000:
 			msg = "The Devourer swept %s into the Underglow!" % ("you" if s.is_player else s.display_name)
 		elif s.last_shover != null and now - int(s.last_shove_ms) < 4500:
 			stats["pushed_off"] += 1

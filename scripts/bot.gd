@@ -16,6 +16,7 @@ var goal_obj_id := 0
 var blocked := {} # pickup instance id -> time (msec) until which we ignore it
 var stuck_count := 0
 var _air_dir := Vector3.ZERO
+var blade_margin := 0.5 # how much room a bot leaves a swinging blade (careless bots get hit)
 
 
 func autopilot_flag() -> bool:
@@ -32,6 +33,7 @@ func _ready() -> void:
 	bravery = randf()
 	greed = randf()
 	ruthless = randf()
+	blade_margin = randf_range(-0.1, 0.7)
 	agent = NavigationAgent3D.new()
 	agent.path_desired_distance = 1.1
 	agent.target_desired_distance = 1.0
@@ -60,6 +62,19 @@ func _controller(delta: float) -> void:
 	if think_t <= 0.0:
 		think_t = randf_range(0.18, 0.32)
 		_think()
+	# Falling with nothing below: double jump back towards the nearest stone.
+	if not is_on_floor() and air_jumps > 0 and velocity.y < -2.0 and not main.world.has_ground(global_position, global_position.y, 25.0):
+		var land = main.world.nearest_landing(global_position)
+		# Only once we have dropped below it: a normal jump down to a lower stone stays above.
+		if land != null and global_position.y < float(land.y) + 0.2:
+			var to_land: Vector3 = land - global_position
+			to_land.y = 0.0
+			if to_land.length() > 0.3:
+				move_dir = to_land.normalized()
+				_air_dir = move_dir
+				air_speed = clampf(to_land.length() / 0.8, 2.0, Cfg.SPRINT_SPEED)
+				want_jump = true
+				return
 	if not is_on_floor() and _air_dir != Vector3.ZERO:
 		# Mid-jump: keep heading for the stone we aimed at.
 		move_dir = _air_dir
@@ -94,6 +109,13 @@ func _controller(delta: float) -> void:
 			var g: float = Cfg.GRAVITY
 			var tair := (v + sqrt(maxf(0.0, v * v - 2.0 * g * dh))) / g
 			air_speed = clampf(dist / tair, 2.0, Cfg.SPRINT_SPEED)
+			if main.blades != null and not main.blades.path_clear(global_position, land, dist / air_speed, blade_margin):
+				# A blade is about to sweep through this gap: wait at the edge for it to pass.
+				move_dir = Vector3.ZERO
+				air_speed = 0.0
+				stuck_t = 0.0
+				last_pos = global_position
+				return
 			want_jump = true
 			var to_land := land - global_position
 			to_land.y = 0.0
@@ -210,7 +232,7 @@ func _think() -> void:
 			return
 
 	# 5. Bright enough (or late): wait on the gate island. Otherwise wander.
-	if light >= Cfg.ESCAPE_LIGHT or (main.time_left < 80.0 and light >= 65.0):
+	if light >= Cfg.ESCAPE_LIGHT or (main.time_left < Cfg.GATE_OPEN_AT + 20.0 and light >= 65.0):
 		_set_goal(main.world.gate_wait_point(get_instance_id()))
 		return
 	if not has_goal or _flat_dist(pos, goal) < 1.0:

@@ -1,9 +1,10 @@
 # Last Light
 
-A 5-minute survival game made in Godot 4.7. Ten pilgrims race across floating garden
+A 3-minute survival game made in Godot 4.7. Ten pilgrims race across floating garden
 islands as the sun sets, leaping between stepping stones over the Underglow, a glowing
 abyss. Your lantern is your health: grab glowing blooms, race rivals to falling
-Sunflares, shove them off the stones, survive the Hollows and the Devourer, and step
+Sunflares, shove them off the stones, time your jumps past swinging knife pendulums, survive the
+Hollows and the Devourer, and step
 through the Sun Gate with 80% light before the sun is gone.
 
 ## Download

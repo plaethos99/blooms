@@ -6,7 +6,7 @@ blossom trees, a koi pond, stone lantern-shrines, and on the summit the
 **Sun Gate**, a marble arch with a ring of gold.
 
 It is beautiful at the start: a golden sunset, pink blossoms, fireflies. **The
-clock is the sun.** Over five minutes the sun sinks, the sky goes from gold to
+clock is the sun.** Over three minutes the sun sinks, the sky goes from gold to
 violet to black, and stars and an aurora come out. The flowers and grass start
 to glow as it gets darker. It gets more beautiful and more dangerous at the same time.
 
@@ -17,7 +17,7 @@ gate only lets in lanterns at **80% or brighter**.
 
 | Original (mall) | Now |
 |---|---|
-| Wall clock 05:00 | The sunset itself (plus the HUD clock) |
+| Wall clock 03:00 | The sunset itself (plus the HUD clock) |
 | First-aid kit | **Ember Bloom**: glowing flower, +10–15% (pink light beam) |
 | Improvised tool | **Pilgrim's Staff / Bell Hammer / Lantern Pole / Broken Oar** (gold beam), 4 swings |
 | Ghost | **Hollow**: moth-like shadow with a light-*eating* aura |
@@ -61,11 +61,25 @@ wind-up, so a quick flare or swing really does save you.
 ## Phases
 | Clock | What happens |
 |---|---|
-| 05:00–03:00 | Golden hour. Shrines at full size. Hollows every 12–16 s. |
-| 03:00–01:00 | Sunset. Shrines shrink, hollows spawn faster and move faster. |
-| **01:00** | **The Sun Gate opens.** Walk into it at 80%+ to escape right away. Below 80% it throws you back. |
-| **00:30** | **Night.** Shrines go out, hollows stop fading away, and they spawn around the summit stairs. |
+| 03:00–02:15 | Golden hour. Shrines at full size. Hollows every 10–13 s. |
+| 02:15–00:30 | Sunset. Shrines shrink, hollows spawn faster and move faster. |
+| **00:30** | **The Sun Gate opens** for the last 30 seconds. Walk into it at 80%+ to escape right away. Below 80% it throws you back. |
+| **00:15** | **Night.** Shrines go out, hollows stop fading away, and they spawn around the summit stairs. |
 | 00:00 | The light is gone. Anyone still on the island is lost. |
+
+## Knife pendulums
+Each bridge picks a few random gaps between two stones (never two in a row) and
+makes them 1.1 m wider. A crescent blade hangs exactly over the middle of each,
+from a small floating rock, swinging across the path (2.4–3.2 s per swing,
+desynced) at mid-jump body height. Jump while the blade is out to one side.
+A hit costs 6% light and throws you sideways. Bracing cuts the throw to 40%.
+Bots wait at the edge for a gap, but careless ones misjudge it. Tuning:
+`BLADE_*` in `cfg.gd`.
+
+## Double jump
+One extra jump in mid-air (`AIR_JUMPS`). It cancels knockback and lets you
+steer, so a missed leap, a shove or a blade hit can be saved by jumping again
+before you drop too far. Bots use it too when they fall past a stone.
 
 ## Controls (prototype)
 WASD move · Shift sprint · Mouse look · LMB swing · RMB brace · Space/Q flare ·

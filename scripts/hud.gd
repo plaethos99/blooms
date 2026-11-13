@@ -2,6 +2,7 @@ extends CanvasLayer
 ## Screen UI: sunset clock, lantern meter, abilities, event feed, roster, intro/end.
 
 const Cfg = preload("res://scripts/cfg.gd")
+const Fonts = preload("res://scripts/fonts.gd")
 const LightMeter = preload("res://scripts/light_meter.gd")
 const Indicator = preload("res://scripts/indicator.gd")
 const Minimap = preload("res://scripts/minimap.gd")
@@ -53,6 +54,9 @@ var tip_lbl: Label
 var tip_t := 0.0
 var tips_seen := {}
 var tip_queue: Array = []
+var tip_gap := 0.0 # quiet time before the next tip may show
+const TIPS_FILE := "user://tips_seen.cfg"
+const TIP_SHOW := 4.0
 var play_t := 0.0
 var obj_target = null
 var obj_label := ""
@@ -97,7 +101,7 @@ func setup(m) -> void:
 	top.offset_top = 10
 	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(top)
-	clock = _label("05:00", 54, Color(1.0, 0.92, 0.75))
+	clock = _label(_clock_text(Cfg.MATCH_TIME), 54, Color(1.0, 0.92, 0.75))
 	clock.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	top.add_child(clock)
 	phase = _label("", 16, Color(1.0, 0.86, 0.72, 0.85))
@@ -155,24 +159,31 @@ func setup(m) -> void:
 	abil.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vb.add_child(abil)
 
+	# Tips: a small, quiet line near the bottom, never over the action.
+	_load_tips_seen()
 	tip_panel = PanelContainer.new()
 	var tsb := _panel_style()
-	tsb.bg_color = Color(0.05, 0.04, 0.1, 0.8)
-	tsb.border_color = Color(0.6, 0.85, 1.0, 0.5)
-	tsb.set_content_margin_all(12)
+	tsb.bg_color = Color(0.03, 0.03, 0.06, 0.45)
+	tsb.border_color = Color(1.0, 0.9, 0.7, 0.18)
+	tsb.set_corner_radius_all(14)
+	tsb.content_margin_left = 14
+	tsb.content_margin_right = 14
+	tsb.content_margin_top = 6
+	tsb.content_margin_bottom = 6
 	tip_panel.add_theme_stylebox_override("panel", tsb)
 	tip_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
 	tip_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	tip_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	tip_panel.offset_bottom = -215
-	tip_panel.offset_top = -215
+	tip_panel.offset_bottom = -28
+	tip_panel.offset_top = -28
 	tip_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	tip_panel.modulate.a = 0.0
 	root.add_child(tip_panel)
-	tip_lbl = _label("", 18, Color(0.85, 0.95, 1.0))
+	tip_lbl = _label("", 15, Color(0.95, 0.92, 0.85, 0.9))
+	tip_lbl.label_settings.outline_size = 3
 	tip_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	tip_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	tip_lbl.custom_minimum_size = Vector2(720, 0)
+	tip_lbl.custom_minimum_size = Vector2(460, 0)
 	tip_panel.add_child(tip_lbl)
 
 	feed_box = VBoxContainer.new()
@@ -262,6 +273,8 @@ func _label(text: String, size: int, col: Color) -> Label:
 	var l := Label.new()
 	l.text = text
 	var ls := LabelSettings.new()
+	if size >= 26:
+		ls.font = Fonts.title()
 	ls.font_size = size
 	ls.font_color = col
 	ls.outline_size = maxi(4, size / 7)
@@ -308,7 +321,7 @@ func _build_caption() -> void:
 	var a := _label("THE SUN GATE", 54, Color(1.0, 0.85, 0.5))
 	a.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	caption.add_child(a)
-	var b := _label("Your only way out. It opens at 01:00. Step through with 80% light.", 22, Color(1.0, 0.95, 0.85))
+	var b := _label("Your only way out. It opens at %s. Step through with 80%% light." % _clock_text(Cfg.GATE_OPEN_AT), 22, Color(1.0, 0.95, 0.85))
 	b.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	caption.add_child(b)
 	var c := _label("(%s to skip)" % ("tap" if main.touch else "any key"), 15, Color(0.85, 0.85, 0.9, 0.8))
@@ -355,7 +368,7 @@ func _build_intro() -> void:
 		["2", "%s from stone to stone between islands. Fall, and the Underglow takes you." % kc("jump"), Color(0.6, 0.95, 1.0)],
 		["3", "SUNFLARES crash down on the map. Get there first: flares blast hollows AND rivals.", Color(1.0, 0.65, 0.3)],
 		["4", "Hollows hunt you. When stones glow RED, the Devourer is rising. Get off!", Color(1.0, 0.45, 0.45)],
-		["5", "At 01:00 the SUN GATE opens. Step through with 80% light to escape.", Color(1.0, 0.85, 0.45)],
+		["5", "At %s the SUN GATE opens. Step through with 80%% light to escape." % _clock_text(Cfg.GATE_OPEN_AT), Color(1.0, 0.85, 0.45)],
 	]
 	for s in steps:
 		_center_label(vb, "%s.  %s" % [s[0], s[1]], 19, s[2])
@@ -493,6 +506,8 @@ func _button(text: String, size: int, min_size: Vector2) -> Button:
 	b.focus_mode = Control.FOCUS_NONE
 	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	b.add_theme_font_size_override("font_size", size)
+	if size >= 24:
+		b.add_theme_font_override("font", Fonts.title())
 	for st in ["normal", "hover", "pressed"]:
 		var sb := StyleBoxFlat.new()
 		sb.set_corner_radius_all(12)
@@ -583,12 +598,29 @@ func toast(text: String) -> void:
 	toast_t = 1.8
 
 
-## Shows a one-time explanation the first time something happens.
+## Each tip shows once ever (remembered between games), and only a couple can wait in line.
 func tip(id: String, text: String) -> void:
 	if tips_seen.has(id):
 		return
 	tips_seen[id] = true
-	tip_queue.append(text)
+	_save_tips_seen()
+	if tip_queue.size() >= 2:
+		return
+	tip_queue.append(text.trim_prefix("TIP: "))
+
+
+func _load_tips_seen() -> void:
+	var cf := ConfigFile.new()
+	if cf.load(TIPS_FILE) == OK:
+		for id in cf.get_section_keys("seen") if cf.has_section("seen") else PackedStringArray():
+			tips_seen[id] = true
+
+
+func _save_tips_seen() -> void:
+	var cf := ConfigFile.new()
+	for id in tips_seen:
+		cf.set_value("seen", str(id), true)
+	cf.save(TIPS_FILE)
 
 
 func _update_tips(delta: float, p) -> void:
@@ -613,10 +645,14 @@ func _update_tips(delta: float, p) -> void:
 		if h != null:
 			tip("hollow", "TIP: That red-eyed wraith is a HOLLOW. When its eyes blaze it LUNGES. Dodge, or %s to blast it." % k("flare"))
 	tip_t -= delta
-	if tip_t <= 0.0 and not tip_queue.is_empty():
+	tip_gap -= delta
+	# Only when things are calm: on the ground, nothing hunting you, no Devourer rising.
+	var calm: bool = p.alive and p.is_on_floor() and main.nearest_hollow(p.global_position, 12.0) == null 		and main.wyrm_escape_point(p.global_position) == null
+	if tip_t <= 0.0 and tip_gap <= 0.0 and calm and not tip_queue.is_empty():
 		tip_lbl.text = tip_queue.pop_front()
-		tip_t = 6.5
-	tip_panel.modulate.a = clampf(tip_t * 2.0, 0.0, 1.0) if tip_t < 6.0 else clampf((6.5 - tip_t) * 4.0, 0.0, 1.0)
+		tip_t = TIP_SHOW
+		tip_gap = TIP_SHOW + 10.0
+	tip_panel.modulate.a = 0.0 if tip_t <= 0.0 else minf(clampf(tip_t * 2.5, 0.0, 1.0), clampf((TIP_SHOW - tip_t) * 4.0, 0.0, 1.0))
 
 
 ## Works out the single most useful thing to do right now, plus where it is.
@@ -674,7 +710,7 @@ func _compute_objective(p) -> void:
 		return
 	if p.light >= Cfg.ESCAPE_LIGHT:
 		obj_col = Color(1.0, 0.85, 0.4)
-		objective.text = "Bright enough!  Wait by the SUN GATE (opens 01:00)"
+		objective.text = "Bright enough!  Wait by the SUN GATE (opens %s)" % _clock_text(Cfg.GATE_OPEN_AT)
 		obj_target = gate
 		obj_label = "SUN GATE"
 		return
@@ -768,20 +804,24 @@ func _update_indicators(p) -> void:
 		indicator.gate = g
 
 
+static func _clock_text(t: float) -> String:
+	var secs := int(ceil(t))
+	return "%02d:%02d" % [floori(secs / 60.0), secs % 60]
+
+
 func _process(delta: float) -> void:
 	if main == null or main.player == null:
 		return
 	var p = main.player
 	var tl: float = main.time_left
-	var secs := int(ceil(tl))
-	clock.text = "%02d:%02d" % [floori(secs / 60.0), secs % 60]
+	clock.text = _clock_text(tl)
 	var st: String = main.state
 	if st == "intro":
 		phase.text = ""
 	elif st == "ended":
 		phase.text = "The light is gone"
 	elif tl > Cfg.GATE_OPEN_AT:
-		phase.text = "The sun is setting · the Sun Gate opens at 01:00"
+		phase.text = "The sun is setting · the Sun Gate opens at %s" % _clock_text(Cfg.GATE_OPEN_AT)
 	elif tl > Cfg.FINAL_PHASE_AT:
 		phase.text = "The Sun Gate is OPEN · 80% light to pass"
 	else:

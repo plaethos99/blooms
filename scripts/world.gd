@@ -1,4 +1,5 @@
 extends Node3D
+const Cfg = preload("res://scripts/cfg.gd")
 ## Builds the Sky Gardens: floating islands with hanging gardens and waterfalls, linked
 ## by stepping stones that rise and fall over the Underglow (a glowing abyss: fall in and
 ## you are gone). Also answers spatial queries for the game.
@@ -567,6 +568,33 @@ func island_at(p: Vector3) -> int:
 	return -1
 
 
+## The closest stone or island top a pilgrim falling at p could still reach with a
+## double jump (top no higher than `climb` above p). Returns null if none is close.
+func nearest_landing(p: Vector3, reach := 6.0, climb := 1.8):
+	var best = null
+	var best_d := reach
+	for b in bridges:
+		for k in b["stones"].size():
+			var s: Vector3 = b["stones"][k]
+			if s.y > p.y + climb:
+				continue
+			var d := Vector2(s.x - p.x, s.z - p.z).length() - float(b["radii"][k]) * 0.5
+			if d < best_d:
+				best_d = d
+				best = s
+	for i in ISLANDS.size():
+		var c := island_center(i)
+		if c.y > p.y + climb:
+			continue
+		var flat := Vector2(p.x - c.x, p.z - c.z)
+		var d := flat.length() - (island_radius(i) - 1.5)
+		if d < best_d:
+			best_d = d
+			var e := flat.normalized() * (island_radius(i) - 1.5)
+			best = Vector3(c.x + e.x, c.y, c.z + e.y)
+	return best
+
+
 ## Index of the bridge whose stones p is on or right next to (-1 if none).
 func bridge_at(p: Vector3, pad := 0.6) -> int:
 	for bi in bridges.size():
@@ -954,11 +982,33 @@ func _build_bridges() -> void:
 		var n := maxi(1, roundi((L - STONE_GAP) / (2.8 + STONE_GAP)))
 		var radii: Array = []
 		var total := 0.0
-		for s in n:
-			var rr := randf_range(1.2, 1.6)
-			radii.append(rr)
-			total += rr * 2.0
-		var gap := (L - total) / float(n + 1)
+		var gap := 0.0
+		var blade_gaps: Array = [] # gap k sits between stones k-1 and k; these get a knife pendulum
+		while true:
+			radii.clear()
+			total = 0.0
+			for s in n:
+				var rr := randf_range(1.2, 1.6)
+				radii.append(rr)
+				total += rr * 2.0
+			# Pick some gaps between two stones at random (never two in a row) and widen them.
+			blade_gaps.clear()
+			var inner: Array = range(1, n)
+			inner.shuffle()
+			for k in inner:
+				if blade_gaps.size() >= maxi(1, int(n / 2.0)):
+					break
+				if blade_gaps.has(k - 1) or blade_gaps.has(k + 1):
+					continue
+				if blade_gaps.is_empty() or randf() < 0.75:
+					blade_gaps.append(k)
+			gap = (L - total - Cfg.BLADE_GAP_EXTRA * blade_gaps.size()) / float(n + 1)
+			if gap >= 1.0 or n <= 1:
+				break
+			n -= 1
+		var gaps: Array = []
+		for k in n:
+			gaps.append(gap + (Cfg.BLADE_GAP_EXTRA if blade_gaps.has(k) else 0.0))
 		var rune := _mat(RUNE_COL, 0.4, RUNE_COL, 0.8)
 		var stones: Array = []
 		var along := ra
@@ -967,7 +1017,7 @@ func _build_bridges() -> void:
 		var amp := randf_range(1.0, 1.7)
 		for s in n:
 			var rad: float = radii[s]
-			along += gap + rad
+			along += float(gaps[s]) + rad
 			# Rise and fall from stone to stone, but never more than one jump can climb,
 			# and always able to reach the far island.
 			var hops_left := n - s
@@ -997,7 +1047,7 @@ func _build_bridges() -> void:
 		_lamp(A + dir * (ra - 0.7) + perp * 1.9)
 		_lamp(B - dir * (rb - 0.7) - perp * 1.9)
 		bridges.append({
-			"a": ia, "b": ib, "stones": stones, "radii": radii, "rune": rune, "warn": 0.0,
+			"a": ia, "b": ib, "stones": stones, "radii": radii, "rune": rune, "warn": 0.0, "blade_gaps": blade_gaps,
 			"dir": dir, "perp": perp, "start": A + dir * ra, "end": B - dir * rb,
 		})
 
