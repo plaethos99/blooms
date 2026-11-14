@@ -1,14 +1,24 @@
 name: Build game
 
-# Exports a portable Windows build and an Android APK with Godot.
-# Every push to main uploads both as workflow artifacts; pushing a tag like v0.5
-# also attaches them to a GitHub Release.
+# Exports a portable Windows build, an Android APK and an unsigned iPhone IPA with Godot.
+# Every push to main uploads them as workflow artifacts; pushing a tag like v0.5
+# also attaches them to a GitHub Release. The IPA is unsigned: sideload it with
+# Sideloadly (or AltStore), which signs it with your own Apple ID.
 
 on:
   push:
     branches: [main]
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      ios_only:
+        description: "Only build the iPhone IPA"
+        type: boolean
+        default: false
+      release_tag:
+        description: "Also attach the IPA to this existing release (e.g. v0.9.1)"
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -18,6 +28,7 @@ env:
 
 jobs:
   export:
+    if: ${{ !inputs.ios_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -120,3 +131,82 @@ jobs:
           files: |
             build/LastLight-windows-portable.zip
             build/LastLight-android.apk
+
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Godot (macOS) and the iOS template
+        id: cache-godot-mac
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/godot-mac
+            ~/godot-templates
+          key: godot-mac-${{ env.GODOT_VERSION }}-stable
+
+      - name: Download Godot and the iOS export template
+        if: steps.cache-godot-mac.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          base="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          mkdir -p ~/godot-mac ~/godot-templates
+          curl -sSL -o godot.zip "$base/Godot_v${GODOT_VERSION}-stable_macos.universal.zip"
+          unzip -q godot.zip -d ~/godot-mac
+          curl -sSL -o tpl.tpz "$base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          unzip -q tpl.tpz "templates/ios.zip" "templates/version.txt"
+          mv templates/* ~/godot-templates/
+          rm -f godot.zip tpl.tpz
+
+      - name: Install Godot and the template
+        run: |
+          set -euo pipefail
+          dest="$HOME/Library/Application Support/Godot/export_templates/${GODOT_VERSION}.stable"
+          mkdir -p "$dest"
+          cp ~/godot-templates/* "$dest/"
+          echo "GODOT=$HOME/godot-mac/Godot.app/Contents/MacOS/Godot" >> "$GITHUB_ENV"
+          xcodebuild -version
+
+      - name: Import project
+        run: '"$GODOT" --headless --import || true'
+
+      - name: Export the Xcode project
+        run: |
+          set -euo pipefail
+          mkdir -p build/ios
+          "$GODOT" --headless --export-release "iOS" build/ios/LastLight.ipa 2>&1 | tail -40
+          ls -la build/ios
+
+      - name: Build the unsigned IPA
+        run: |
+          set -euo pipefail
+          cd build/ios
+          proj=$(ls -d *.xcodeproj | head -1)
+          xcodebuild -list -project "$proj"
+          scheme=$(xcodebuild -list -json -project "$proj" | python3 -c "import json,sys; print(json.load(sys.stdin)['project']['schemes'][0])")
+          xcodebuild -project "$proj" -scheme "$scheme" -configuration Release -sdk iphoneos             -destination 'generic/platform=iOS' -derivedDataPath dd             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" DEVELOPMENT_TEAM=""             build | tail -30
+          app=$(find dd/Build/Products -maxdepth 2 -name "*.app" | head -1)
+          echo "Built $app"
+          mkdir -p Payload
+          cp -R "$app" Payload/
+          zip -qry ../LastLight-ios.ipa Payload
+          ls -la ../LastLight-ios.ipa
+
+      - name: Upload iPhone build
+        uses: actions/upload-artifact@v4
+        with:
+          name: LastLight-ios
+          path: build/LastLight-ios.ipa
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release_tag != '' && inputs.release_tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          # The tag's Windows/Android job may still be creating the release.
+          for i in $(seq 1 30); do gh release view "$TAG" >/dev/null 2>&1 && break; sleep 20; done
+          gh release upload "$TAG" build/LastLight-ios.ipa --clobber
