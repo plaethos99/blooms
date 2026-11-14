@@ -57,6 +57,7 @@ func _load_baked() -> bool:
 		var r = load(path)
 		if r == null:
 			return false
+		_safe_loop(r)
 		b[n] = r
 	bank = b
 	return true
@@ -332,7 +333,21 @@ func _wav(s: PackedFloat32Array, loop := false) -> AudioStreamWAV:
 		w.loop_mode = AudioStreamWAV.LOOP_FORWARD
 		w.loop_begin = 0
 		w.loop_end = s.size()
+		_safe_loop(w)
 	return w
+
+
+## A loop must end a little before the last sample. The mixer interpolates and reads a few
+## samples past the loop point; ending exactly on the last sample made it read past the end of
+## the buffer, which crashed the audio thread on Android (v0.9, title screen).
+const LOOP_GUARD := 16
+func _safe_loop(w) -> void:
+	if not (w is AudioStreamWAV) or w.loop_mode == AudioStreamWAV.LOOP_DISABLED:
+		return
+	var bytes_per_frame := (2 if w.format == AudioStreamWAV.FORMAT_16_BITS else 1) * (2 if w.stereo else 1)
+	var frames: int = w.data.size() / bytes_per_frame
+	w.loop_end = mini(w.loop_end, frames - LOOP_GUARD)
+	w.loop_begin = clampi(w.loop_begin, 0, w.loop_end - 1)
 
 
 func _norm(s: PackedFloat32Array, peak: float) -> PackedFloat32Array:

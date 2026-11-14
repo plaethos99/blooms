@@ -453,7 +453,7 @@ func _build_intro() -> void:
 		["  ", "MOON POTION: on the altar of the CRYSTAL CAVE, guarded by the SHARDBACK.", Color(0.8, 0.6, 1.0)],
 		["2", "Grab WEAPONS (gold beams) to fight. Other pilgrims race you, and shove.", Color(1.0, 0.85, 0.45)],
 		["3", "%s from stone to stone. Fall, and the Underglow takes you." % kc("jump"), Color(0.6, 0.95, 1.0)],
-		["4", "With all three and 80%% light, cross the GAUNTLET of fire and knives.", Color(1.0, 0.55, 0.4)],
+		["4", "With all three and 80% light, cross the GAUNTLET of fire and knives.", Color(1.0, 0.55, 0.4)],
 		["5", "Carry an EXTINGUISHER (red) to put out the fire round the PORTAL, then step in.", Color(0.6, 0.85, 1.0)],
 	]
 	for s in steps:
