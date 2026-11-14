@@ -16,6 +16,8 @@ extinguisher, and step through the portal with 80% light before the sun is gone.
 
 Windows: unzip and run `LastLight.exe`. Nothing needs installing.
 Android: install `LastLight-android.apk` (allow installs from unknown sources).
+iPhone/iPad: `LastLight-ios.ipa` is unsigned. Sideload it with Sideloadly (or AltStore),
+which signs it with your Apple ID. With a free Apple ID it must be re-signed every 7 days.
 
 ## Controls
 | | Desktop | Phone |
