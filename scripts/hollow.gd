@@ -49,6 +49,7 @@ enum { TELEGRAPH, HUNT, STAGGER, DYING }
 static var _shaders := {}
 
 var main
+var warm := false # an inert copy shown once on the title screen, so its shaders compile there
 var state := TELEGRAPH
 var t := 0.0
 var life := 0.0
@@ -94,6 +95,9 @@ static func _get_shader(key: String) -> Shader:
 
 func _ready() -> void:
 	_build()
+	if warm:
+		trail.emitting = true
+		return
 	body_root.scale = Vector3.ONE * 0.01
 	trail.emitting = false
 	main.sfx.play("hollow_form", global_position - Vector3(0, 1.0, 0), 2.0, randf_range(0.9, 1.1))
@@ -113,6 +117,8 @@ func is_active() -> bool:
 
 
 func _physics_process(delta: float) -> void:
+	if warm:
+		return
 	t += delta
 	life += delta
 	var flap_speed := 14.0 if lunge_state == 2 else 8.0

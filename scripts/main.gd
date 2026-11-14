@@ -63,6 +63,7 @@ var args := {}
 var shot_path := ""
 var shot_timer := 0.0
 var _frames := 0
+var _hitch_t := 0.0
 
 
 func _ready() -> void:
@@ -104,6 +105,8 @@ func _ready() -> void:
 	if touch:
 		add_child(touch)
 	_spawn_survivors()
+	if OS.has_feature("mobile") or args.has("mobileprofile"):
+		_apply_mobile_profile()
 	if args.has("skip"):
 		time_left = Cfg.MATCH_TIME - float(args["skip"])
 	if args.has("bright"):
@@ -146,10 +149,89 @@ func _ready() -> void:
 		add_child(intro_cam)
 		intro_cam.current = true
 		_update_intro_cam(0.0)
+		_warm_up()
+
+
+## Phones compile each shader the first time something using it is drawn, which froze the
+## first minute of a match (first hollow, first Sunflare, first flare...). So while the
+## title is up, draw one of everything that only appears later, far in front of the title
+## camera behind the title card, then remove it.
+func _warm_up() -> void:
+	var cam_fwd: Vector3 = -intro_cam.global_transform.basis.z
+	var p: Vector3 = intro_cam.global_position + cam_fwd * 30.0
+	var side: Vector3 = intro_cam.global_transform.basis.x
+	var temp: Array = []
+	fx_burst(p, Color(1.0, 0.8, 0.5), 8, false)
+	fx_burst(p, Color(0.2, 0.15, 0.25), 8, true)
+	fx_ring(p, Color(1.0, 0.9, 0.6), 1.5, 1.5)
+	fx_light(p, Color(1.0, 0.8, 0.5), 0.5, 2.0, 1.5)
+	var kinds := ["bloom", "shard", "tool", "flare", "fruit", "potion", "extinguisher", "ward"]
+	for i in kinds.size():
+		var pk = PickupScript.new()
+		pk.kind = kinds[i]
+		pk.tool_name = Cfg.TOOL_NAMES[0]
+		pk.position = p + side * (float(i) - 3.5) * 1.5
+		add_child(pk)
+		temp.append(pk)
+	var h = HollowScript.new()
+	h.main = self
+	h.warm = true
+	h.position = p + Vector3(0, 2.0, 0)
+	add_child(h)
+	temp.append(h)
+	var d = DropScript.new()
+	d.main = self
+	d.warm = true
+	d.position = p - Vector3(0, 2.0, 0)
+	add_child(d)
+	temp.append(d)
+	if trials and trials._knife_mesh:
+		var kn := MeshInstance3D.new()
+		kn.mesh = trials._knife_mesh
+		kn.material_override = trials._knife_mat
+		kn.position = p + side * 2.0
+		add_child(kn)
+		temp.append(kn)
+	# The red hurt flash, guardian warning disc and brace ring use their own materials.
+	var mats: Array = [player.hurt_mat, player.brace_ring.material_override]
+	for g in trials.guardians():
+		mats.append(g.warn_mat)
+		mats.append(g.overlay)
+	for i in mats.size():
+		if mats[i] == null:
+			continue
+		var mi := MeshInstance3D.new()
+		var sm := SphereMesh.new()
+		sm.radius = 0.4
+		sm.height = 0.8
+		mi.mesh = sm
+		mi.material_override = mats[i]
+		mi.position = p + side * (float(i) - 2.0) + Vector3(0, -1.0, 0)
+		add_child(mi)
+		temp.append(mi)
+	get_tree().create_timer(2.5).timeout.connect(func():
+		for n in temp:
+			if is_instance_valid(n):
+				n.queue_free())
+
+
+## Phones: render the 3D scene at a lower internal resolution (upscaled with FSR), keep a
+## steady 60 fps cap, and thin out purely decorative particles.
+func _apply_mobile_profile() -> void:
+	var vp := get_viewport()
+	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR
+	vp.scaling_3d_scale = 0.7
+	vp.msaa_3d = Viewport.MSAA_DISABLED
+	vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
+	Engine.max_fps = 60
+	RenderingServer.directional_shadow_atlas_set_size(2048, true)
+	if world.fireflies:
+		world.fireflies.amount = 140
 
 
 func _exit_tree() -> void:
 	HollowScript._shaders.clear()
+	WorldScript._shader_cache.clear()
 
 
 func _update_intro_cam(delta: float) -> void:
@@ -871,6 +953,11 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _process(delta: float) -> void:
+	if args.has("hitch"):
+		# Debug: report every frame that took longer than 40 ms (shader compiles show up here).
+		_hitch_t += delta
+		if delta > 0.04:
+			print("HITCH %4d ms at %5.1fs state=%s hollows=%d drops=%d pickups=%d" % [int(delta * 1000.0), _hitch_t, state, hollows.size(), drops.size(), pickups.size()])
 	if intro_cam:
 		_update_intro_cam(delta)
 	if args.has("introsecs") and state == "intro":

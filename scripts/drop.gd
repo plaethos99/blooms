@@ -6,6 +6,7 @@ extends Node3D
 const Cfg = preload("res://scripts/cfg.gd")
 
 var main
+var warm := false # an inert copy shown once on the title screen, so its shaders compile there
 var warn: float = Cfg.DROP_WARN
 var t := 0.0
 var place := ""
@@ -67,10 +68,16 @@ func _ready() -> void:
 	label.no_depth_test = true
 	label.position.y = 2.6
 	add_child(label)
+	if warm:
+		_launch_meteor(9.0)
+		meteor.position = Vector3(0, 1.0, 0)
+		return
 	main.sfx.play("drop_warn", global_position + Vector3(0, 3, 0), 4.0)
 
 
 func _process(delta: float) -> void:
+	if warm:
+		return
 	t += delta
 	var r := remaining()
 	label.text = "SUNFLARE\n%d" % int(ceil(r))

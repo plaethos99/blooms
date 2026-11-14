@@ -463,9 +463,13 @@ func build() -> void:
 
 # ---------------------------------------------------------------- helpers
 
+static var _shader_cache := {}
 func _shader_mat(code: String) -> ShaderMaterial:
-	var sh := Shader.new()
-	sh.code = code
+	var sh: Shader = _shader_cache.get(code)
+	if sh == null:
+		sh = Shader.new()
+		sh.code = code
+		_shader_cache[code] = sh
 	var m := ShaderMaterial.new()
 	m.shader = sh
 	return m
@@ -1792,7 +1796,7 @@ func _build_grass() -> void:
 	for i in ISLANDS.size():
 		var c := island_center(i)
 		var r := island_radius(i)
-		for k in int(r * r * 3.2):
+		for k in int(r * r * 3.2 * (0.6 if OS.has_feature("mobile") else 1.0)):
 			var rr := sqrt(randf()) * (r - 0.4)
 			var a := randf() * TAU
 			var p := c + Vector3(cos(a) * rr, 0, sin(a) * rr)
