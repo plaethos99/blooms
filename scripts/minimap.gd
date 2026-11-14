@@ -99,6 +99,15 @@ func _draw() -> void:
 			"flare":
 				var ce := _clamp_edge(mp, 8.0)
 				_star(ce[0], 6.5 + sin(_t * 8.0), Color(1.0, 0.55, 0.15))
+			"fruit":
+				draw_circle(mp, 3.6 + sin(_t * 8.0), Color(1.0, 0.8, 0.3))
+			"potion":
+				draw_circle(mp, 3.4, Color(0.75, 0.45, 1.0))
+			"extinguisher":
+				draw_rect(Rect2(mp - Vector2(2.5, 2.5), Vector2(5, 5)), Color(1.0, 0.25, 0.2))
+				draw_rect(Rect2(mp - Vector2(2.5, 2.5), Vector2(5, 5)), Color(0.7, 0.9, 1.0), false, 1.0)
+			"ward":
+				draw_arc(mp, 3.0, 0.0, TAU, 12, Color(1.0, 0.95, 0.7), 1.5, true)
 	# Hollows close by.
 	for h in main.hollows:
 		if not is_instance_valid(h) or h.state == 3:
@@ -111,15 +120,18 @@ func _draw() -> void:
 		if s.is_player or not s.alive or s.escaped:
 			continue
 		draw_circle(_to_map(b, s.global_position), 2.6, s.tint.lightened(0.2))
-	# Gate (clamped to the edge when far).
-	var gp := _to_map(b, w.gate_pos)
-	var ge := _clamp_edge(gp, 10.0)
-	var gc := Color(1.0, 0.85, 0.4) if main.gate_open else Color(1.0, 0.85, 0.4, 0.75)
-	var gs := 6.0 + (1.5 * sin(_t * 4.0) if main.gate_open else 0.0)
-	var dia := PackedVector2Array([ge[0] + Vector2(0, -gs), ge[0] + Vector2(gs, 0), ge[0] + Vector2(0, gs), ge[0] + Vector2(-gs, 0)])
-	draw_colored_polygon(dia, gc)
-	draw_string_outline(font, ge[0] + Vector2(-30, -9), "GATE", HORIZONTAL_ALIGNMENT_CENTER, 60, 11, 4, Color(0, 0, 0, 0.8))
-	draw_string(font, ge[0] + Vector2(-30, -9), "GATE", HORIZONTAL_ALIGNMENT_CENTER, 60, 11, gc)
+	# The trials and the portal (clamped to the edge when far). Done ones go dim.
+	var p0 = main.player
+	_place(b, w.garden_center, "GARDEN", Color(1.0, 0.8, 0.35), p0.relic_fruit, font)
+	_place(b, w.cave_center, "CAVE", Color(0.8, 0.55, 1.0), p0.relic_potion, font)
+	var ready: bool = p0.has_all_relics()
+	_place(b, w.gate_pos, "PORTAL", Color(1.0, 0.85, 0.4), false, font, ready)
+	# Guardians, while awake.
+	for g in main.trials.guardians():
+		if g.is_awake() and g.global_position.distance_to(b[0]) < 45.0:
+			var gm := _to_map(b, g.global_position)
+			draw_circle(gm, 4.5, Color(1.0, 0.3, 0.2, 0.9))
+			draw_arc(gm, 6.5 + sin(_t * 9.0), 0.0, TAU, 16, Color(1.0, 0.3, 0.2, 0.7), 1.5, true)
 	# Incoming Sunflares with their countdown.
 	for d in main.drops:
 		if not is_instance_valid(d):
@@ -149,6 +161,18 @@ func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, Vector2(SIZE, SIZE)), Color(1.0, 0.85, 0.6, 0.35), false, 1.5)
 	draw_string_outline(font, Vector2(6, SIZE - 6), "MAP", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, 3, Color(0, 0, 0, 0.7))
 	draw_string(font, Vector2(6, SIZE - 6), "MAP", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 0.9, 0.75, 0.7))
+
+
+func _place(b: Array, pos: Vector3, label: String, col: Color, done: bool, font: Font, pulse := false) -> void:
+	var ce := _clamp_edge(_to_map(b, pos), 10.0)
+	var c: Color = col if not done else Color(col.r, col.g, col.b, 0.35)
+	var gs := 5.5 + (1.5 * sin(_t * 5.0) if pulse else 0.0)
+	var q: Vector2 = ce[0]
+	draw_colored_polygon(PackedVector2Array([q + Vector2(0, -gs), q + Vector2(gs, 0), q + Vector2(0, gs), q + Vector2(-gs, 0)]), c)
+	var txt := label + (" ✓" if done else "")
+	var tp := q + Vector2(-34, -9 if q.y > 24.0 else 18)
+	draw_string_outline(font, tp, txt, HORIZONTAL_ALIGNMENT_CENTER, 68, 10, 4, Color(0, 0, 0, 0.8))
+	draw_string(font, tp, txt, HORIZONTAL_ALIGNMENT_CENTER, 68, 10, c)
 
 
 func _star(p: Vector2, r: float, col: Color) -> void:

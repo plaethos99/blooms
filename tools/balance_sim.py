@@ -32,8 +32,8 @@ def main():
     print("rounds=%d  escapes per round: %s" % (len(rows), " ".join(str(int(e)) for e in esc)))
     print("mean escapes=%.1f  stdev=%.1f  player escaped %d/%d" % (
         statistics.mean(esc), statistics.pstdev(esc), sum(r["player"] == "esc" for r in rows), len(rows)))
-    for k in ["bloom", "shard", "damage", "flare", "kills", "blooms", "hollows", "fell", "shoves", "pushed_off", "wyrm", "drops"]:
-        print("  avg %-7s %.0f" % (k, statistics.mean(r[k] for r in rows)))
+    for k in ["bloom", "shard", "damage", "flare", "kills", "blooms", "hollows", "fell", "shoves", "pushed_off", "wyrm", "drops", "fruit", "potion", "beast", "crawler", "doused", "ready"]:
+        print("  avg %-7s %.1f" % (k, statistics.mean(r.get(k, 0) for r in rows)))
 
 if __name__ == "__main__":
     main()

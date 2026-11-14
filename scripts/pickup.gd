@@ -1,6 +1,7 @@
 extends Node3D
-## Ember Bloom (heal), Light Shard (small heal, dropped by hollows), a tool, or a
-## Sunflare (left by a drop: +2 flares and some light).
+## Ember Bloom (heal), Light Shard (small heal, dropped by hollows), a weapon, a
+## Sunflare (left by a drop: +2 flares, some light and the first relic), the Sky Fruit
+## and Moon Potion (the other two relics), an extinguisher or a Sun Ward.
 
 var kind := "bloom"
 var heal := 12.0
@@ -30,6 +31,14 @@ func _ready() -> void:
 			lifetime = 25.0
 		"flare":
 			_build_flare()
+		"fruit":
+			_build_fruit()
+		"potion":
+			_build_potion()
+		"extinguisher":
+			_build_extinguisher()
+		"ward":
+			_build_ward()
 		_:
 			_build_tool()
 	vis.scale = Vector3.ONE * 0.01
@@ -40,7 +49,7 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	age += delta
 	vis.position.y = 0.12 * sin(age * 2.2)
-	vis.rotation.y += delta * (2.5 if kind == "flare" else 0.8)
+	vis.rotation.y += delta * (2.5 if kind == "flare" or kind == "ward" else 0.8)
 	if glow:
 		glow.light_energy = glow_base * (0.85 + 0.15 * sin(age * 3.3))
 	if lifetime > 0.0:
@@ -180,3 +189,113 @@ func _build_flare() -> void:
 		mi.basis = Basis.looking_at(d.normalized(), up) * Basis(Vector3.RIGHT, -PI / 2.0)
 	_light(Color(1.0, 0.55, 0.2), 2.6, 7.0, 1.0)
 	_beam(Color(1.0, 0.45, 0.12), 26.0)
+
+
+func _build_fruit() -> void:
+	var skin := _mat(Color(1.0, 0.72, 0.22), Color(1.0, 0.55, 0.12), 3.5)
+	skin.roughness = 0.25
+	var fm := SphereMesh.new()
+	fm.radius = 0.3
+	fm.height = 0.56
+	_add(fm, skin, Vector3(0, 0.9, 0))
+	var stem := CylinderMesh.new()
+	stem.top_radius = 0.015
+	stem.bottom_radius = 0.025
+	stem.height = 0.16
+	_add(stem, _mat(Color(0.35, 0.25, 0.15)), Vector3(0, 1.22, 0)).rotation.z = 0.3
+	var leaf := SphereMesh.new()
+	leaf.radius = 0.13
+	leaf.height = 0.04
+	for sx in [-1.0, 1.0]:
+		var l := _add(leaf, _mat(Color(0.3, 0.65, 0.25)), Vector3(0.1 * sx, 1.24, 0))
+		l.scale = Vector3(1.0, 1.0, 0.45)
+		l.rotation.z = -0.5 * sx
+	_light(Color(1.0, 0.7, 0.3), 2.0, 5.0, 0.9)
+	_beam(Color(1.0, 0.75, 0.25), 22.0)
+
+
+func _build_potion() -> void:
+	var glass := _mat(Color(0.75, 0.5, 1.0, 0.55), Color(0.6, 0.3, 1.0), 4.0)
+	glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	glass.roughness = 0.05
+	var body := SphereMesh.new()
+	body.radius = 0.24
+	body.height = 0.48
+	_add(body, glass, Vector3(0, 0.62, 0))
+	var neck := CylinderMesh.new()
+	neck.top_radius = 0.06
+	neck.bottom_radius = 0.08
+	neck.height = 0.26
+	_add(neck, glass, Vector3(0, 0.93, 0))
+	var cork := CylinderMesh.new()
+	cork.top_radius = 0.07
+	cork.bottom_radius = 0.06
+	cork.height = 0.1
+	_add(cork, _mat(Color(0.6, 0.45, 0.3)), Vector3(0, 1.1, 0))
+	var swirl := SphereMesh.new()
+	swirl.radius = 0.15
+	swirl.height = 0.3
+	_add(swirl, _mat(Color(0.5, 0.95, 1.0), Color(0.4, 0.9, 1.0), 5.0), Vector3(0, 0.6, 0))
+	_light(Color(0.65, 0.4, 1.0), 2.2, 5.0, 0.7)
+	_beam(Color(0.7, 0.4, 1.0), 20.0)
+
+
+func _build_extinguisher() -> void:
+	var red := _mat(Color(0.85, 0.08, 0.06), Color(0.6, 0.05, 0.03), 0.6)
+	red.roughness = 0.3
+	red.metallic = 0.3
+	var can := CylinderMesh.new()
+	can.top_radius = 0.16
+	can.bottom_radius = 0.17
+	can.height = 0.75
+	_add(can, red, Vector3(0, 0.6, 0))
+	var cap := SphereMesh.new()
+	cap.radius = 0.16
+	cap.height = 0.2
+	_add(cap, red, Vector3(0, 0.98, 0))
+	var black := _mat(Color(0.08, 0.08, 0.08))
+	var valve := BoxMesh.new()
+	valve.size = Vector3(0.08, 0.14, 0.08)
+	_add(valve, black, Vector3(0, 1.1, 0))
+	var handle := BoxMesh.new()
+	handle.size = Vector3(0.3, 0.04, 0.07)
+	_add(handle, black, Vector3(0.08, 1.18, 0)).rotation.z = 0.25
+	var hose := CylinderMesh.new()
+	hose.top_radius = 0.025
+	hose.bottom_radius = 0.025
+	hose.height = 0.55
+	_add(hose, black, Vector3(0.2, 0.85, 0)).rotation.z = 0.35
+	var band := CylinderMesh.new()
+	band.top_radius = 0.172
+	band.bottom_radius = 0.172
+	band.height = 0.12
+	_add(band, _mat(Color(0.9, 0.95, 1.0), Color(0.6, 0.85, 1.0), 2.0), Vector3(0, 0.62, 0))
+	_light(Color(0.6, 0.85, 1.0), 1.4, 4.0, 0.8)
+	_beam(Color(0.55, 0.85, 1.0), 16.0)
+
+
+func _build_ward() -> void:
+	var gold := _mat(Color(1.0, 0.85, 0.45), Color(1.0, 0.8, 0.4), 3.0)
+	gold.metallic = 0.8
+	gold.roughness = 0.25
+	var ring := TorusMesh.new()
+	ring.inner_radius = 0.2
+	ring.outer_radius = 0.27
+	var r := _add(ring, gold, Vector3(0, 1.0, 0))
+	r.rotation.x = PI / 2.0
+	var core := SphereMesh.new()
+	core.radius = 0.12
+	core.height = 0.24
+	_add(core, _mat(Color(1.0, 1.0, 0.9), Color(1.0, 0.95, 0.75), 7.0), Vector3(0, 1.0, 0))
+	var ray := CylinderMesh.new()
+	ray.top_radius = 0.0
+	ray.bottom_radius = 0.05
+	ray.height = 0.22
+	ray.radial_segments = 4
+	ray.rings = 1
+	for i in 10:
+		var a := TAU * i / 10.0
+		var mi := _add(ray, gold, Vector3(cos(a) * 0.37, 1.0 + sin(a) * 0.37, 0))
+		mi.rotation.z = a - PI / 2.0
+	_light(Color(1.0, 0.95, 0.75), 1.6, 4.0, 1.0)
+	_beam(Color(1.0, 0.95, 0.7), 16.0)

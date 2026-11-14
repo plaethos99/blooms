@@ -1,15 +1,14 @@
 extends RefCounted
 ## All tuning numbers for LAST LIGHT live here.
 
-const MATCH_TIME := 180.0 # 3 minutes
+const MATCH_TIME := 210.0 # 3:30: three trials, then the gauntlet
 const START_LIGHT := 50.0
 const MAX_LIGHT := 100.0
 const ESCAPE_LIGHT := 80.0
 const BRACE_LIGHT := 70.0
 const DIM_LIGHT := 20.0
-const GATE_OPEN_AT := 30.0 # the gate opens for the last 30 seconds
-const FINAL_PHASE_AT := 15.0
-const SHRINE_SHRINK_SPAN := 120.0 # shrines start shrinking this many seconds before FINAL_PHASE_AT
+const FINAL_PHASE_AT := 30.0 # night: the hollows gather at the portal
+const SHRINE_SHRINK_SPAN := 130.0 # shrines start shrinking this many seconds before FINAL_PHASE_AT
 
 const BLOOM_INTERVAL := Vector2(9.0, 12.0)
 const BLOOM_HEAL := Vector2(8.0, 12.0)
@@ -17,7 +16,7 @@ const MAX_BLOOMS := 6
 const SHARD_HEAL := 4.0
 const TOOL_INTERVAL := Vector2(18.0, 24.0)
 const MAX_TOOLS := 3
-const TOOL_SWINGS := 4
+const TOOL_SWINGS := 5
 
 const HOLLOW_INTERVAL_EARLY := Vector2(10.0, 13.0)
 const HOLLOW_INTERVAL_LATE := Vector2(5.0, 7.0)
@@ -105,4 +104,53 @@ const COLORS := [
 	Color(0.55, 0.75, 0.4), Color(0.85, 0.85, 0.92), Color(0.35, 0.8, 0.9),
 	Color(0.9, 0.5, 0.8),
 ]
-const TOOL_NAMES := ["Pilgrim's Staff", "Bell Hammer", "Lantern Pole", "Broken Oar"]
+const TOOL_NAMES := ["Thorn Spear", "Sky Blade", "Bell Hammer", "Pilgrim's Staff"]
+
+# ---------------------------------------------------------------- the three trials (v0.9)
+# To pass the portal you need the SUNFLARE (grab a drop), the SKY FRUIT (Hidden Garden,
+# guarded by the Thornback) and the MOON POTION (Crystal Cave, guarded by the Shardback),
+# plus 80% light. Each relic also brightens your lantern.
+const FRUIT_HEAL := 8.0
+const POTION_HEAL := 8.0
+const BEAST_HP := 10 # weapon hit = 1, flare = 2
+const BEAST_FRUITS := 2 # the tree drops this many when the Thornback falls
+const BEAST_REFORM := 30.0
+const BEAST_SPEED := 4.4
+const BEAST_CHARGE_SPEED := 12.0
+const BEAST_DAMAGE := 11.0
+const BEAST_KNOCK := 10.0
+const CRAWLER_HP := 6
+const CRAWLER_REFORM := 16.0
+const CRAWLER_SPEED := 4.8
+const CRAWLER_DAMAGE := 9.0
+const CRAWLER_KNOCK := 8.0
+const GUARD_WINDUP := 0.65 # the tell before every attack
+const GUARD_REACH := 2.7
+const GUARD_COOLDOWN := 1.5
+const GUARD_FLARE_DAMAGE := 2
+const POTION_BREW := 24.0 # a new potion appears on the altar this long after one is taken
+const FRUIT_RIPEN := 2.0 # fruit falls this long after the Thornback goes down
+
+# The gauntlet: the causeway from Heart Rock to the portal.
+const JET_CYCLE := Vector2(4.6, 5.6) # seconds between bursts of a fire vent
+const JET_WARN := 0.8
+const JET_BURN := 1.2
+const FIRE_DAMAGE := 7.0
+const FIRE_KNOCK := 4.0
+const KNIFE_INTERVAL := Vector2(2.8, 3.8)
+const KNIFE_WARN := 0.8
+const KNIFE_SPEED := 15.0
+const KNIFE_DAMAGE := 7.0
+const KNIFE_KNOCK := 5.0
+const KNIFE_HIT_RADIUS := 0.65
+# The fire seal round the portal: put a section out with an extinguisher to get through.
+const SEAL_SEGMENTS := 4
+const SEAL_RADIUS := 5.0
+const SEAL_OUT_TIME := 6.0
+const SEAL_DAMAGE := 9.0
+const EXT_INTERVAL := Vector2(15.0, 19.0)
+const MAX_EXTINGUISHERS := 2
+const EXT_MAX_HELD := 2
+const WARD_INTERVAL := Vector2(16.0, 22.0) # Sun Ward artifact: absorbs one hit
+const MAX_WARDS := 2
+const WARD_MAX_HELD := 1

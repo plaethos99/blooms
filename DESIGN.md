@@ -243,6 +243,60 @@ from the Human Base Meshes bundle:
 - Gameplay is unchanged (same collision capsule). Balance: 2.5 escapes per round
   over 8 simulated rounds. The characters cost about 2–4 fps.
 
+## The three trials (v0.9)
+The islands were too open: you could see the way out from the start and just collect
+light. Now you have to *earn* the way out.
+
+**To pass the portal you need three relics and 80% light.** Each relic also brightens
+your lantern.
+
+| Relic | Where | What stands in the way |
+|---|---|---|
+| **Sunflare** | Falls from the sky (announced on the map) | Every other pilgrim racing you |
+| **Sky Fruit** | The **Hidden Garden**: a walled garden on its own island, reached over the stones, with arched gateways where they land | The **Thornback**, a huge boar-lion of bark and brambles, asleep under the fruit tree. Kill it (10 hits; a flare does 2) and the tree drops 2 fruit. It grows back after 30 s. |
+| **Moon Potion** | The **Crystal Cave**: a basalt dome full of glowing crystals, potion on the altar | The **Shardback**, a six-legged crystal crawler that attacks anyone near the altar (6 hits; it re-forms after 16 s). A new potion brews 24 s after one is taken. |
+
+- **You can't kill other pilgrims.** They die by other things: falls, hollows, fire,
+  knives, the guardians. You can still shove them and blast them with flares.
+- **Guardians always warn you.** They rear up, their eyes blaze, and a red area on the
+  ground shows where the blow lands (a long strip for the Thornback's charge). Step out
+  of it, brace, or flare it. A health bar appears at the top when one is near.
+- **Weapons** (gold beams) now have 5 swings and appear often outside the garden
+  gateways and the cave door, where the fights are.
+
+### The gauntlet and the portal
+The Sun Gate is now a **portal**: a ring of carved stone with a swirling disc, on
+Portal Isle. The only way there is the **gauntlet**, a causeway of scorched paving
+slabs from Heart Rock:
+- **Fire vents** on every other slab. They glow and hiss for 0.8 s, then burst for
+  1.2 s. Being burned costs light and throws you *back along* the causeway, not off it.
+- **Knife launchers** on pillars beside the causeway. Their eye flashes red, then a
+  knife flies across at chest height.
+- **Knife pendulums** in up to two of the gaps (as before).
+- **The fire seal:** four walls of flame round the portal. Walk into one carrying an
+  **extinguisher** (red, blue beam; spawns on Heart Rock and the open islands) and
+  that section goes out for 6 s. Without one, the fire burns you and throws you back.
+  Others can slip through the gap you made.
+- **Sun Ward** (gold ring artifact): takes the next hit for you.
+
+### Timing and balance
+- The match is now **3:30** (night falls at 0:30). Each relic adds 8–12% light.
+- Measured over 16 all-AI rounds: **2.4 escapes per round** (spread 1–4); about 6
+  pilgrims a round collect all three relics, and the gauntlet, the fire seal and the
+  clock stop the rest. The player's autopilot escaped 6 of 16.
+- Debug: `--cavetest` (paths into the cave), `--trialtrace` (potion and guardian state
+  in the log), `--flyover --intro --introsecs=1` (the new tour before the match).
+
+### New art (same pipeline as v0.7)
+- Grok Imagine references and textures in `3d/tests/lastlight_world/trials/`: the
+  garden, the cave, the fire portal, both creatures, the fruit and the potion; cave
+  rock, crystal, garden wall, scorched paving, hedge and beast hide.
+- `build_trials.py`: cave dome with doorway, crystals, altar, portal ring, garden wall
+  and gateway, knife launcher, brazier.
+- `build_creatures.py`: the Thornback and the Shardback as jointed parts (body, head,
+  jaw, tail, legs) that the game animates in `guardian.gd`.
+- The fruit and potion photos are the relic icons in the HUD.
+
 ## Next steps
 1. Playtest jumping and pushing with real people; tune `scripts/cfg.gd`.
 2. Online multiplayer (Godot high-level multiplayer, server-authoritative).

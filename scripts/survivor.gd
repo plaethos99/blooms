@@ -32,6 +32,13 @@ var last_shove_ms := 0
 var cause := ""
 var last_wyrm_ms := -100000
 var last_blade_ms := -100000
+var last_fire_ms := -100000
+# The three relics you need for the portal, and what you carry for the road there.
+var relic_flare := false
+var relic_fruit := false
+var relic_potion := false
+var extinguishers := 0
+var wards := 0
 var bracing := false
 var brace_ready := true
 var brace_recover := 0.0
@@ -265,8 +272,35 @@ func heal(amount: float) -> bool:
 	return true
 
 
+func has_all_relics() -> bool:
+	return relic_flare and relic_fruit and relic_potion
+
+
+func relic_count() -> int:
+	return int(relic_flare) + int(relic_fruit) + int(relic_potion)
+
+
+func missing_relics() -> Array:
+	var out: Array = []
+	if not relic_flare:
+		out.append("SUNFLARE")
+	if not relic_fruit:
+		out.append("SKY FRUIT")
+	if not relic_potion:
+		out.append("MOON POTION")
+	return out
+
+
 func lose_light(amount: float) -> void:
 	if not alive or escaped:
+		return
+	if wards > 0 and amount >= 3.0:
+		# The Sun Ward takes the blow instead.
+		wards -= 1
+		main.fx_ring(global_position + Vector3(0, 1.0, 0), Color(1.0, 0.95, 0.7), 2.0, 0.45)
+		main.sfx.play("brace", null if is_player else global_position, 2.0, 1.3)
+		if is_player:
+			main.hud.toast("Your SUN WARD shattered and took the hit!")
 		return
 	main.stats["damage"] += minf(amount, light)
 	light = maxf(0.0, light - amount)

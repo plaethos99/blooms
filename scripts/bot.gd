@@ -17,6 +17,9 @@ var blocked := {} # pickup instance id -> time (msec) until which we ignore it
 var stuck_count := 0
 var _air_dir := Vector3.ZERO
 var blade_margin := 0.5 # how much room a bot leaves a swinging blade (careless bots get hit)
+var plan := "" # which trial it is working on: "fruit", "potion", "flare", "portal"
+var plan_t := 0.0
+var patience := 0.5 # how long it is willing to wait for others to kill a guardian
 
 
 func autopilot_flag() -> bool:
@@ -34,6 +37,7 @@ func _ready() -> void:
 	greed = randf()
 	ruthless = randf()
 	blade_margin = randf_range(-0.1, 0.7)
+	patience = randf()
 	agent = NavigationAgent3D.new()
 	agent.path_desired_distance = 1.1
 	agent.target_desired_distance = 1.0
@@ -109,7 +113,9 @@ func _controller(delta: float) -> void:
 			var g: float = Cfg.GRAVITY
 			var tair := (v + sqrt(maxf(0.0, v * v - 2.0 * g * dh))) / g
 			air_speed = clampf(dist / tair, 2.0, Cfg.SPRINT_SPEED)
-			if main.blades != null and not main.blades.path_clear(global_position, land, dist / air_speed, blade_margin):
+			var vent_wait: bool = main.trials != null and blade_margin > 0.05 and main.trials.jet_danger(land, dist / air_speed + 0.5)
+			var on_vent: bool = main.trials != null and main.trials.jet_danger(global_position, 0.4)
+			if not on_vent and (vent_wait or (main.blades != null and not main.blades.path_clear(global_position, land, dist / air_speed, blade_margin))):
 				# A blade is about to sweep through this gap: wait at the edge for it to pass.
 				move_dir = Vector3.ZERO
 				air_speed = 0.0
@@ -166,16 +172,49 @@ func _think() -> void:
 		tdist = _flat_dist(pos, threat.global_position)
 
 	_maybe_shove()
+	var T = main.trials
+	var W = main.world
 
-	# 1. Bright enough and the gate is open: go.
-	if main.gate_open and light >= Cfg.ESCAPE_LIGHT:
-		_set_goal(main.world.gate_pos)
-		want_sprint = true
-		if threat != null and tdist < 2.6:
-			try_flare()
+	# 1. All three relics and bright enough: to the portal, through the seal of fire.
+	if has_all_relics() and light >= Cfg.ESCAPE_LIGHT:
+		if extinguishers > 0 or T.seal_open_toward(W.portal_front, 3.0):
+			_set_goal(W.gate_pos)
+			want_sprint = true
+			if threat != null and tdist < 2.6:
+				try_flare()
+			return
+		var ex = main.nearest_pickup(pos, ["extinguisher"])
+		if ex != null:
+			_set_goal(ex.global_position, ex)
+			want_sprint = true
+			return
+		# No extinguisher anywhere: wait by the fire for someone to open it.
+		var c: Vector3 = W.gate_pos
+		var f: Vector3 = W.portal_front - c
+		f.y = 0.0
+		_set_goal(c + f.normalized() * (Cfg.SEAL_RADIUS + 2.5) + Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)))
 		return
 
-	# 2. Deal with a nearby hollow: fight, flare or flee.
+	# 2. A guardian is about to strike me: get out of its way.
+	for g in T.guardians():
+		if not g.is_awake():
+			continue
+		var to_me: Vector3 = pos - g.global_position
+		to_me.y = 0.0
+		var gd: float = to_me.length()
+		if g.is_striking() and gd < Cfg.GUARD_REACH + g.body_radius() + (5.0 if g.charging else 1.5):
+			var in_arc: bool = gd < 1.0 or to_me.normalized().dot(g.atk_dir) > (0.6 if g.charging else 0.1)
+			if in_arc:
+				if light >= Cfg.BRACE_LIGHT and brace_ready and randf() < 0.5:
+					bracing = true
+				var side := Vector3(-g.atk_dir.z, 0, g.atk_dir.x)
+				if side.dot(to_me) < 0.0:
+					side = -side
+				_set_goal(pos + (side * 2.0 + to_me.normalized()).normalized() * 4.0)
+				want_sprint = true
+				return
+
+	# 3. Deal with a nearby hollow: fight, flare or flee.
 	if threat != null:
 		var can_fight: bool = tool_swings > 0 and light >= lerpf(65.0, 30.0, bravery)
 		if tdist < 2.8 and (not can_fight or light < 40.0):
@@ -193,7 +232,7 @@ func _think() -> void:
 			_set_goal(threat.global_position)
 			return
 		if tdist < 7.5:
-			var sh = main.world.nearest_shrine(pos, 2.5)
+			var sh = W.nearest_shrine(pos, 2.5)
 			if sh != null and _flat_dist(pos, sh) < 14.0 and light < 70.0:
 				_set_goal(sh)
 			else:
@@ -202,41 +241,157 @@ func _think() -> void:
 				away = away.normalized()
 				var side := Vector3(-away.z, 0, away.x) * randf_range(-0.6, 0.6)
 				var tgt := pos + (away + side).normalized() * 6.0
-				# Do not flee off a cliff.
-				if main.world.island_at(tgt) == main.world.island_at(pos) and main.world.island_at(pos) >= 0:
+				if W.island_at(tgt) == W.island_at(pos) and W.island_at(pos) >= 0:
 					_set_goal(tgt)
 				else:
-					_set_goal(main.world.island_center(maxi(0, main.world.island_at(pos))))
+					_set_goal(W.island_center(maxi(0, W.island_at(pos))))
 			want_sprint = true
 			return
 
-	# 3. A Sunflare is falling (or lying) close by: race for it.
-	if flares < Cfg.FLARE_MAX:
+	# 4. Very dim: light first, whatever the plan.
+	if light < 30.0:
+		var pk0 = main.best_pickup(self, false)
+		if pk0 != null:
+			_set_goal(pk0.global_position, pk0)
+			want_sprint = stamina > 1.0
+			return
+
+	# 5. A Sunflare falling (or lying) close by: race for it (it is a relic too).
+	if flares < Cfg.FLARE_MAX or not relic_flare:
 		var dr = main.best_drop(self)
-		if dr != null:
+		if dr != null and (not relic_flare or _flat_dist(pos, dr["pos"]) < 16.0):
 			_set_goal(dr["pos"])
 			want_sprint = stamina > 0.5
 			return
 
-	# 4. Gather light, then a tool.
+	# 6. The trials.
+	if not relic_fruit or not relic_potion:
+		if _do_trials(pos, T, W):
+			return
+
+	# 7. Light, then a weapon, then an extinguisher.
 	if light < Cfg.MAX_LIGHT - 1.0:
 		var pk = main.best_pickup(self, false)
-		if pk != null:
+		if pk != null and (light < Cfg.ESCAPE_LIGHT + 4.0 or _flat_dist(pos, pk.global_position) < 15.0):
 			_set_goal(pk.global_position, pk)
 			want_sprint = _flat_dist(pos, pk.global_position) < 12.0 and stamina > 1.0
 			return
 	if tool_swings == 0:
 		var tl = main.best_pickup(self, true)
-		if tl != null:
+		if tl != null and _flat_dist(pos, tl.global_position) < 30.0:
 			_set_goal(tl.global_position, tl)
 			return
-
-	# 5. Bright enough (or late): wait on the gate island. Otherwise wander.
-	if light >= Cfg.ESCAPE_LIGHT or (main.time_left < Cfg.GATE_OPEN_AT + 20.0 and light >= 65.0):
-		_set_goal(main.world.gate_wait_point(get_instance_id()))
+	if extinguishers == 0 and relic_count() >= 2:
+		var ex2 = main.nearest_pickup(pos, ["extinguisher"])
+		if ex2 != null:
+			_set_goal(ex2.global_position, ex2)
+			return
+	if not relic_flare:
+		# Wait somewhere central for the next Sunflare.
+		if not has_goal or _flat_dist(pos, goal) < 1.0:
+			_set_goal(W.random_island_point(W.HEART_ISLAND if randf() < 0.5 else W.START_ISLAND, 2.0, 1.0) if randf() < 0.8 else W.random_walk_point())
 		return
 	if not has_goal or _flat_dist(pos, goal) < 1.0:
-		_set_goal(main.world.random_walk_point())
+		_set_goal(W.random_walk_point())
+
+
+## Works on the Sky Fruit and the Moon Potion. Returns true if it set a goal.
+func _do_trials(pos: Vector3, T, W) -> bool:
+	plan_t -= 0.25
+	var fruits: Array = T.fruit_on_ground()
+	# Fruit lying under the tree, or the potion on the altar, and we need it: go now.
+	if not relic_fruit and not fruits.is_empty():
+		var best = null
+		var bd := 70.0
+		for f in fruits:
+			var d := _flat_dist(pos, f.global_position)
+			if d < bd and not is_blocked(f):
+				bd = d
+				best = f
+		if best != null:
+			_set_goal(best.global_position, best)
+			want_sprint = stamina > 0.5
+			return true
+	# Pick which trial to work on: the nearer one, kept for a while so it doesn't dither.
+	if plan_t <= 0.0 or (plan == "fruit" and relic_fruit) or (plan == "potion" and relic_potion) or plan == "":
+		plan_t = randf_range(6.0, 10.0)
+		var df: float = _flat_dist(pos, W.garden_center) if not relic_fruit else INF
+		var dp: float = _flat_dist(pos, W.cave_center) if not relic_potion else INF
+		plan = "fruit" if df < dp else "potion"
+	var armed: bool = tool_swings > 0 or flares > 0
+	if plan == "potion":
+		var g = T.crawler
+		if T.potion_ready():
+			var pp: Vector3 = T.potion.global_position
+			var to_pot := pos - pp
+			to_pot.y = 0.0
+			var near_pt: Vector3 = pp + (to_pot.normalized() if to_pot.length() > 0.1 else W.cave_dir) * 1.5
+			# The Shardback is right there and we are armed: fight it first.
+			if g.is_awake() and armed and _flat_dist(g.global_position, pos) < 5.0 and light >= 35.0:
+				return _fight(g, pos)
+			_set_goal(near_pt, T.potion)
+			want_sprint = stamina > 0.5
+			return true
+		# Brewing: wait by the doorway (or fight the guardian if keen).
+		if g.is_awake() and armed and bravery > 0.5 and light >= 45.0 and _flat_dist(g.global_position, pos) < 8.0:
+			return _fight(g, pos)
+		_set_goal(W.cave_door + Vector3(randf_range(-1.5, 1.5), 0, randf_range(-1.5, 1.5)) if _flat_dist(pos, W.cave_door) > 2.5 else pos)
+		return true
+	# The fruit: the Thornback has to fall first.
+	var b = T.beast
+	if b.is_active():
+		var keen: bool = armed and light >= lerpf(55.0, 35.0, bravery)
+		if keen:
+			return _fight(b, pos)
+		if tool_swings == 0:
+			var tl = main.best_pickup(self, true)
+			if tl != null and _flat_dist(pos, tl.global_position) < 45.0:
+				_set_goal(tl.global_position, tl)
+				return true
+		# Unarmed: lurk by a garden gateway and hope someone else kills it.
+		if patience > 0.3:
+			var gate: Vector3 = W.garden_gates[0]
+			for gg in W.garden_gates:
+				if _flat_dist(pos, gg) < _flat_dist(pos, gate):
+					gate = gg
+			var inward: Vector3 = (W.garden_center - gate)
+			inward.y = 0.0
+			var lurk: Vector3 = gate + inward.normalized() * 2.0
+			if _flat_dist(pos, lurk) > 2.0:
+				_set_goal(lurk)
+			return true
+		return false
+	# Beast down, fruit not fallen yet (or all taken): wait near the tree if it is about to drop.
+	if T.fruit_t > 0.0:
+		_set_goal(W.tree_pos + (pos - W.tree_pos).normalized() * 3.0)
+		return true
+	# All taken: go for the potion meanwhile.
+	if not relic_potion:
+		plan = "potion"
+		plan_t = 8.0
+	return false
+
+
+## Close in on a guardian and hit it; flare it when close and out of swings.
+func _fight(g, pos: Vector3) -> bool:
+	var to_g: Vector3 = g.global_position - pos
+	to_g.y = 0.0
+	var d: float = to_g.length() - float(g.body_radius())
+	if to_g.length() > 0.01:
+		facing = to_g.normalized()
+		face_lock = 0.3
+	if g.is_asleep() and tool_swings == 0 and flares > 0 and d < 3.0:
+		try_flare()
+	if tool_swings > 0:
+		if d <= Cfg.SWING_REACH - 0.3:
+			try_swing()
+		_set_goal(g.global_position - to_g.normalized() * (g.body_radius() + 1.2))
+	else:
+		if flares > 0 and d < Cfg.FLARE_RADIUS * 0.6:
+			try_flare()
+		_set_goal(g.global_position - to_g.normalized() * (g.body_radius() + 2.0))
+	want_sprint = d > 4.0 and stamina > 1.0
+	return true
 
 
 ## Shove a rival who stands near a drop, or (if ruthless) near an edge.

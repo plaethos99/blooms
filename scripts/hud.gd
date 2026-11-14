@@ -74,6 +74,20 @@ var out_body: Label
 var out_t := 0.0
 var out_dismissed := false
 var _caption_on := false
+var _caption_key := ""
+var cap_title: Label
+var cap_body: Label
+var relic_slots := {} # "flare"/"fruit"/"potion" -> [TextureRect, Label]
+var carry_lbl: RichTextLabel
+var boss_box: VBoxContainer
+var boss_name: Label
+var boss_bar: ProgressBar
+const CAPTIONS := {
+	"portal": ["THE PORTAL", "Your only way out. Bring the SUNFLARE, the SKY FRUIT and the MOON POTION, and 80% light."],
+	"gauntlet": ["THE GAUNTLET", "Fire vents and flying knives guard the causeway. Carry an EXTINGUISHER for the ring of fire."],
+	"garden": ["THE HIDDEN GARDEN", "The SKY FRUIT grows here. Kill the THORNBACK under the tree and the fruit falls."],
+	"cave": ["THE CRYSTAL CAVE", "The MOON POTION brews on the altar. The SHARDBACK guards it."],
+}
 
 
 func setup(m) -> void:
@@ -127,6 +141,30 @@ func setup(m) -> void:
 	alert_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	alert_lbl.modulate.a = 0.0
 	top.add_child(alert_lbl)
+	boss_box = VBoxContainer.new()
+	boss_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	boss_box.add_theme_constant_override("separation", 2)
+	boss_box.visible = false
+	top.add_child(boss_box)
+	boss_name = _label("", 18, Color(1.0, 0.6, 0.45))
+	boss_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	boss_box.add_child(boss_name)
+	boss_bar = ProgressBar.new()
+	boss_bar.custom_minimum_size = Vector2(380, 12)
+	boss_bar.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	boss_bar.show_percentage = false
+	boss_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var bb := StyleBoxFlat.new()
+	bb.bg_color = Color(0.05, 0.03, 0.05, 0.75)
+	bb.border_color = Color(1.0, 0.75, 0.55, 0.6)
+	bb.set_border_width_all(1)
+	bb.set_corner_radius_all(4)
+	var bf := StyleBoxFlat.new()
+	bf.bg_color = Color(0.85, 0.2, 0.12)
+	bf.set_corner_radius_all(4)
+	boss_bar.add_theme_stylebox_override("background", bb)
+	boss_bar.add_theme_stylebox_override("fill", bf)
+	boss_box.add_child(boss_bar)
 
 	var panel := PanelContainer.new()
 	panel.add_theme_stylebox_override("panel", _panel_style())
@@ -149,6 +187,45 @@ func setup(m) -> void:
 	vb.add_child(meter)
 	status_lbl = _label("", 15, Color(0.95, 0.9, 0.85))
 	vb.add_child(status_lbl)
+	var slots := HBoxContainer.new()
+	slots.add_theme_constant_override("separation", 10)
+	slots.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vb.add_child(slots)
+	var flare_tex := GradientTexture2D.new()
+	var fg := Gradient.new()
+	fg.set_color(0, Color(1.0, 0.95, 0.7, 1.0))
+	fg.set_color(1, Color(1.0, 0.4, 0.05, 0.0))
+	fg.add_point(0.45, Color(1.0, 0.6, 0.15, 0.9))
+	flare_tex.gradient = fg
+	flare_tex.fill = GradientTexture2D.FILL_RADIAL
+	flare_tex.fill_from = Vector2(0.5, 0.5)
+	flare_tex.fill_to = Vector2(0.5, 0.0)
+	for r in [["flare", "SUNFLARE", flare_tex], ["fruit", "SKY FRUIT", load("res://textures/icon_fruit.png")], ["potion", "MOON POTION", load("res://textures/icon_potion.png")]]:
+		var box := VBoxContainer.new()
+		box.add_theme_constant_override("separation", 0)
+		box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var tr := TextureRect.new()
+		tr.texture = r[2]
+		tr.custom_minimum_size = Vector2(44, 44)
+		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		tr.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		box.add_child(tr)
+		var l := _label(r[1], 11, Color(0.8, 0.78, 0.85))
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		box.add_child(l)
+		slots.add_child(box)
+		relic_slots[r[0]] = [tr, l]
+	carry_lbl = RichTextLabel.new()
+	carry_lbl.bbcode_enabled = true
+	carry_lbl.fit_content = true
+	carry_lbl.scroll_active = false
+	carry_lbl.autowrap_mode = TextServer.AUTOWRAP_OFF
+	carry_lbl.custom_minimum_size = Vector2(340, 0)
+	carry_lbl.add_theme_font_size_override("normal_font_size", 14)
+	carry_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vb.add_child(carry_lbl)
 	abil = RichTextLabel.new()
 	abil.bbcode_enabled = true
 	abil.fit_content = true
@@ -318,22 +395,28 @@ func _build_caption() -> void:
 	caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	caption.modulate.a = 0.0
 	root.add_child(caption)
-	var a := _label("THE SUN GATE", 54, Color(1.0, 0.85, 0.5))
-	a.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	caption.add_child(a)
-	var b := _label("Your only way out. It opens at %s. Step through with 80%% light." % _clock_text(Cfg.GATE_OPEN_AT), 22, Color(1.0, 0.95, 0.85))
-	b.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	caption.add_child(b)
+	cap_title = _label("THE PORTAL", 54, Color(1.0, 0.85, 0.5))
+	cap_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	caption.add_child(cap_title)
+	cap_body = _label("", 22, Color(1.0, 0.95, 0.85))
+	cap_body.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	caption.add_child(cap_body)
 	var c := _label("(%s to skip)" % ("tap" if main.touch else "any key"), 15, Color(0.85, 0.85, 0.9, 0.8))
 	c.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	caption.add_child(c)
 
 
-func flyover_caption(on: bool) -> void:
+func flyover_caption(on: bool, key := "") -> void:
+	if on and key != _caption_key and CAPTIONS.has(key):
+		_caption_key = key
+		cap_title.text = CAPTIONS[key][0]
+		cap_body.text = CAPTIONS[key][1]
+		caption.modulate.a = 0.0
+		_caption_on = false
 	if on == _caption_on:
 		return
 	_caption_on = on
-	create_tween().tween_property(caption, "modulate:a", 1.0 if on else 0.0, 0.6)
+	create_tween().tween_property(caption, "modulate:a", 1.0 if on else 0.0, 0.5)
 
 
 func show_game_ui() -> void:
@@ -361,17 +444,20 @@ func _build_intro() -> void:
 	intro = _overlay(0.42)
 	var vb: Node = intro.get_child(0).get_child(0)
 	_center_label(vb, "LAST LIGHT", 72, Color(1.0, 0.85, 0.55))
-	_center_label(vb, "Ten pilgrims. Floating gardens. Five minutes until the sun is gone.", 21, Color(1, 0.92, 0.85))
+	_center_label(vb, "Ten pilgrims. Floating gardens. Three and a half minutes until the sun is gone.", 21, Color(1, 0.92, 0.85))
 	_center_label(vb, " ", 6, Color.WHITE)
 	var steps := [
-		["1", "Grab PINK BEAMS (blooms) to brighten your lantern. It is your life.", Color(1.0, 0.7, 0.85)],
-		["2", "%s from stone to stone between islands. Fall, and the Underglow takes you." % kc("jump"), Color(0.6, 0.95, 1.0)],
-		["3", "SUNFLARES crash down on the map. Get there first: flares blast hollows AND rivals.", Color(1.0, 0.65, 0.3)],
-		["4", "Hollows hunt you. When stones glow RED, the Devourer is rising. Get off!", Color(1.0, 0.45, 0.45)],
-		["5", "At %s the SUN GATE opens. Step through with 80%% light to escape." % _clock_text(Cfg.GATE_OPEN_AT), Color(1.0, 0.85, 0.45)],
+		["1", "Win three relics. Each one also brightens your lantern (your life):", Color(1.0, 0.92, 0.8)],
+		["  ", "SUNFLARE: they crash down on the map. Get there first.", Color(1.0, 0.65, 0.3)],
+		["  ", "SKY FRUIT: in the walled HIDDEN GARDEN. Kill the THORNBACK and the tree drops it.", Color(1.0, 0.8, 0.4)],
+		["  ", "MOON POTION: on the altar of the CRYSTAL CAVE, guarded by the SHARDBACK.", Color(0.8, 0.6, 1.0)],
+		["2", "Grab WEAPONS (gold beams) to fight. Other pilgrims race you, and shove.", Color(1.0, 0.85, 0.45)],
+		["3", "%s from stone to stone. Fall, and the Underglow takes you." % kc("jump"), Color(0.6, 0.95, 1.0)],
+		["4", "With all three and 80%% light, cross the GAUNTLET of fire and knives.", Color(1.0, 0.55, 0.4)],
+		["5", "Carry an EXTINGUISHER (red) to put out the fire round the PORTAL, then step in.", Color(0.6, 0.85, 1.0)],
 	]
 	for s in steps:
-		_center_label(vb, "%s.  %s" % [s[0], s[1]], 19, s[2])
+		_center_label(vb, ("%s.  %s" % [s[0], s[1]]) if String(s[0]).strip_edges() != "" else s[1], 18, s[2])
 	_center_label(vb, " ", 6, Color.WHITE)
 	_center_label(vb, "The box at the top always says what to do next, and the map shows where.", 16, Color(0.85, 0.95, 1.0))
 	if main.touch:
@@ -476,7 +562,7 @@ func _update_out_panel(delta: float, p) -> void:
 	if not out_panel.visible:
 		if p.escaped:
 			out_title.text = "YOU ESCAPED!"
-			out_body.text = "You stepped through the Sun Gate. Play again, or watch who else makes it."
+			out_body.text = "You stepped through the portal. Play again, or watch who else makes it."
 		elif p.fell:
 			out_title.text = "YOU FELL INTO THE UNDERGLOW"
 			out_body.text = "The abyss took you. Play again, or watch the others try."
@@ -529,7 +615,7 @@ func hide_intro() -> void:
 func show_end(title: String, escaped: Array, lost: Array) -> void:
 	end_title.text = title
 	var body := "The light is gone.\n\n"
-	body += "Passed through the Sun Gate:  %s\n" % (", ".join(PackedStringArray(escaped)) if not escaped.is_empty() else "no one")
+	body += "Passed through the portal:  %s\n" % (", ".join(PackedStringArray(escaped)) if not escaped.is_empty() else "no one")
 	body += "Left in the dark:  %s" % (", ".join(PackedStringArray(lost)) if not lost.is_empty() else "no one")
 	end_body.text = body
 	endp.visible = true
@@ -634,13 +720,19 @@ func _update_tips(delta: float, p) -> void:
 		if p.light < Cfg.DIM_LIGHT:
 			tip("dim", "TIP: Below 20% you move slower. Get to a pink bloom right away!")
 		if p.tool_swings > 0:
-			tip("tool", "TIP: You picked up a tool. %s when a hollow is close: 2 hits destroy it." % k("hit"))
+			tip("tool", "TIP: You have a weapon. %s to hit hollows (2 hits) and the guardians." % k("hit"))
 		if main.world.bridge_at(pp, 1.5) >= 0 or not main.world.has_ground(pp + p.facing * 2.0, pp.y, 3.0):
 			tip("jump", "TIP: %s to leap stone to stone. Run up to the edge first. Miss, and you fall into the Underglow." % kc("jump"))
 		if play_t > 12.0:
 			tip("push", "TIP: %s to shove a rival. Near an edge, that sends them into the abyss. They can do it to you too!" % kc("push"))
 		if main.world.shrine_protects(pp):
 			tip("shrine", "TIP: You're inside a shrine's gold ring. Hollows can't come in, but the rings shrink as night falls.")
+		if main.world.in_garden(pp):
+			tip("garden", "TIP: The THORNBACK charges in a straight line after pawing the ground. Step aside, then hit it from behind.")
+		if main.world.in_cave(pp):
+			tip("cave", "TIP: The SHARDBACK attacks anyone near the altar. A flare does 2 damage to it.")
+		if main.world.bridge_at(pp, 1.0) == main.world.GAUNTLET:
+			tip("gauntlet", "TIP: Fire vents glow and hiss before they burst. Launchers flash red before they throw a knife.")
 		var h = main.nearest_hollow(pp, 18.0)
 		if h != null:
 			tip("hollow", "TIP: That red-eyed wraith is a HOLLOW. When its eyes blaze it LUNGES. Dodge, or %s to blast it." % k("flare"))
@@ -694,30 +786,45 @@ func _compute_objective(p) -> void:
 		else:
 			objective.text = "HOLLOW!  Run away. %s to sprint" % kc("run")
 		return
-	if main.gate_open:
-		if p.light >= Cfg.ESCAPE_LIGHT:
-			obj_col = Color(1.0, 0.85, 0.4)
-			objective.text = "GO!  Walk into the glowing SUN GATE"
-			obj_target = gate
-			obj_label = "SUN GATE"
+	var W = main.world
+	var T = main.trials
+	# A guardian is about to strike you.
+	for g in T.guardians():
+		if g.is_striking() and pp.distance_to(g.global_position) < 7.0:
+			obj_col = Color(1.0, 0.35, 0.3)
+			objective.text = "The %s is striking!  Get out of the RED or %s" % [g.display, k("brace").to_upper()]
 			return
-		var b = main.nearest_pickup(pp, ["bloom", "shard"])
-		obj_col = Color(1.0, 0.6, 0.6)
-		objective.text = "Gate open! You need %d%% more. Get a bloom!" % need
-		if b != null:
-			obj_target = b.global_position
-			obj_label = "BLOOM"
-		return
-	if p.light >= Cfg.ESCAPE_LIGHT:
+	if p.has_all_relics():
+		if p.light < Cfg.ESCAPE_LIGHT:
+			var b0 = main.best_pickup(p, false)
+			obj_col = Color(1.0, 0.72, 0.85)
+			objective.text = "All three relics!  Now get to 80%% light (%d%% more): PINK BLOOMS" % need
+			if b0 != null:
+				obj_target = b0.global_position
+				obj_label = "BLOOM"
+			return
+		if p.extinguishers == 0 and not T.seal_open_toward(W.portal_front, 1.0):
+			var ex = main.nearest_pickup(pp, ["extinguisher"])
+			obj_col = Color(0.6, 0.85, 1.0)
+			objective.text = "Get an EXTINGUISHER (red, blue beam) for the portal's ring of fire"
+			if ex != null:
+				obj_target = ex.global_position
+				obj_label = "EXTINGUISHER"
+			return
 		obj_col = Color(1.0, 0.85, 0.4)
-		objective.text = "Bright enough!  Wait by the SUN GATE (opens %s)" % _clock_text(Cfg.GATE_OPEN_AT)
-		obj_target = gate
-		obj_label = "SUN GATE"
+		if W.bridge_at(pp, 1.0) == W.GAUNTLET:
+			objective.text = "THE GAUNTLET: time your jumps past the fire vents and knives!"
+		elif W.island_at(pp) == W.GATE_ISLAND:
+			objective.text = "Walk into the fire with your extinguisher, then into the PORTAL!"
+		else:
+			objective.text = "GO!  Cross the gauntlet from Heart Rock to the PORTAL"
+		obj_target = W.gate_pos
+		obj_label = "PORTAL"
 		return
-	# A Sunflare falling close by: race for it.
-	if p.flares < Cfg.FLARE_MAX:
+	# A Sunflare falling close by: race for it (you need one, and flares are always useful).
+	if not p.relic_flare or p.flares < Cfg.FLARE_MAX:
 		var best_d = null
-		var bd := 45.0
+		var bd := 60.0 if not p.relic_flare else 35.0
 		for d in main.drops:
 			if is_instance_valid(d) and pp.distance_to(d.global_position) < bd:
 				bd = pp.distance_to(d.global_position)
@@ -729,30 +836,104 @@ func _compute_objective(p) -> void:
 			obj_label = "SUNFLARE"
 			return
 		var fl = main.nearest_pickup(pp, ["flare"])
-		if fl != null and pp.distance_to(fl.global_position) < 45.0:
+		if fl != null and pp.distance_to(fl.global_position) < 60.0:
 			obj_col = Color(1.0, 0.65, 0.25)
 			objective.text = "Grab the SUNFLARE before someone else does!"
 			obj_target = fl.global_position
 			obj_label = "SUNFLARE"
 			return
-	# Prefer the bloom you can realistically reach first (others are racing too).
-	var bloom = main.best_pickup(p, false)
-	if bloom == null:
-		bloom = main.nearest_pickup(pp, ["bloom", "shard"])
-	if bloom != null:
-		obj_col = Color(1.0, 0.72, 0.85)
-		objective.text = "Walk into a PINK BLOOM  (%d%% more to escape)" % need
-		obj_target = bloom.global_position
+	if p.light < 30.0:
+		var b1 = main.best_pickup(p, false)
+		if b1 != null:
+			obj_col = Color(1.0, 0.72, 0.85)
+			objective.text = "Your lantern is low!  Grab a PINK BLOOM"
+			obj_target = b1.global_position
+			obj_label = "BLOOM"
+			return
+	# Fruit on the ground under the tree: run!
+	if not p.relic_fruit:
+		var fr = main.nearest_pickup(pp, ["fruit"])
+		if fr != null:
+			obj_col = Color(1.0, 0.8, 0.35)
+			objective.text = "SKY FRUIT on the ground!  Grab one before the others"
+			obj_target = fr.global_position
+			obj_label = "SKY FRUIT"
+			return
+	var to_garden := pp.distance_to(W.garden_center) if not p.relic_fruit else INF
+	var to_cave := pp.distance_to(W.cave_center) if not p.relic_potion else INF
+	if to_garden < INF or to_cave < INF:
+		if to_garden <= to_cave:
+			var b = T.beast
+			obj_col = Color(1.0, 0.8, 0.4)
+			if W.in_garden(pp):
+				if b.is_active():
+					if p.tool_swings > 0:
+						objective.text = "Kill the THORNBACK!  %s to hit it, dodge the RED" % k("hit").to_upper()
+					elif p.flares > 0:
+						objective.text = "%s to blast the THORNBACK (2 damage). A WEAPON helps" % k("flare").to_upper()
+					else:
+						objective.text = "You need a WEAPON or a flare to hurt the THORNBACK"
+					obj_target = b.global_position
+					obj_label = "THORNBACK"
+				else:
+					objective.text = "The Thornback is down!  The SKY FRUIT is falling"
+					obj_target = W.tree_pos
+					obj_label = "SKY FRUIT"
+				return
+			if p.tool_swings == 0 and p.flares == 0:
+				var tl0 = main.nearest_pickup(pp, ["tool"])
+				if tl0 != null:
+					objective.text = "Grab a WEAPON (gold beam), then go to the HIDDEN GARDEN"
+					obj_target = tl0.global_position
+					obj_label = "WEAPON"
+					return
+			objective.text = "SKY FRUIT: cross the stones to the walled HIDDEN GARDEN"
+			obj_target = W.garden_gates[0] if not W.garden_gates.is_empty() else W.garden_center
+			for gg in W.garden_gates:
+				if pp.distance_to(gg) < pp.distance_to(obj_target):
+					obj_target = gg
+			obj_label = "HIDDEN GARDEN"
+			return
+		obj_col = Color(0.8, 0.6, 1.0)
+		if W.in_cave(pp):
+			if T.potion_ready():
+				objective.text = "Take the MOON POTION from the altar!  Watch the SHARDBACK"
+				obj_target = T.potion.global_position
+				obj_label = "MOON POTION"
+			else:
+				objective.text = "The next MOON POTION is brewing on the altar…"
+				obj_target = W.altar_pos
+				obj_label = "ALTAR"
+			return
+		objective.text = "MOON POTION: cross the stones to the CRYSTAL CAVE"
+		obj_target = W.cave_door
+		obj_label = "CRYSTAL CAVE"
+		return
+	# Only the Sunflare is missing.
+	obj_col = Color(1.0, 0.65, 0.25)
+	objective.text = "Last relic: a SUNFLARE. Watch the map for the next one to fall"
+	var bl = main.best_pickup(p, false)
+	if bl != null and p.light < Cfg.ESCAPE_LIGHT:
+		obj_target = bl.global_position
 		obj_label = "BLOOM"
-		return
-	var tl = main.nearest_pickup(pp, ["tool"])
-	if p.tool_swings == 0 and tl != null:
-		obj_col = Color(1.0, 0.85, 0.45)
-		objective.text = "No blooms right now. Grab a TOOL (gold beam)"
-		obj_target = tl.global_position
-		obj_label = "TOOL"
-		return
-	objective.text = "New blooms appear soon. Look for pink beams"
+
+
+func _update_boss(p) -> void:
+	var show = null
+	var bd := 26.0
+	if main.state == "playing" and p.alive and not p.escaped:
+		for g in main.trials.guardians():
+			if not g.is_active():
+				continue
+			var d: float = p.global_position.distance_to(g.global_position)
+			if d < bd and (g.is_awake() or d < 12.0):
+				bd = d
+				show = g
+	boss_box.visible = show != null
+	if show != null:
+		boss_name.text = "THE %s%s" % [show.display, "  (asleep)" if show.is_asleep() else ""]
+		boss_bar.max_value = show.max_hp
+		boss_bar.value = show.hp
 
 
 func flash_hurt() -> void:
@@ -820,15 +1001,13 @@ func _process(delta: float) -> void:
 		phase.text = ""
 	elif st == "ended":
 		phase.text = "The light is gone"
-	elif tl > Cfg.GATE_OPEN_AT:
-		phase.text = "The sun is setting · the Sun Gate opens at %s" % _clock_text(Cfg.GATE_OPEN_AT)
 	elif tl > Cfg.FINAL_PHASE_AT:
-		phase.text = "The Sun Gate is OPEN · 80% light to pass"
+		phase.text = "Three relics and 80% light open the portal"
 	else:
-		phase.text = "Night · the hollows gather at the gate"
+		phase.text = "Night · the hollows gather at the portal"
 	if st == "playing" and tl <= Cfg.FINAL_PHASE_AT:
 		clock.label_settings.font_color = Color(1.0, 0.35, 0.3).lerp(Color(1, 0.9, 0.8), 0.5 + 0.5 * sin(tl * 6.0))
-	elif tl <= Cfg.GATE_OPEN_AT:
+	elif tl <= 60.0:
 		clock.label_settings.font_color = Color(1.0, 0.8, 0.4)
 	else:
 		clock.label_settings.font_color = Color(1.0, 0.92, 0.75)
@@ -837,22 +1016,32 @@ func _process(delta: float) -> void:
 	meter.value = light
 	light_lbl.text = "LANTERN  %d%%" % int(round(light))
 	if p.escaped:
-		status_lbl.text = "You passed through the Sun Gate. Watching %s (Tab)" % p.spectate_name()
+		status_lbl.text = "You passed through the portal. Watching %s (Tab)" % p.spectate_name()
 	elif not p.alive:
 		status_lbl.text = "%s Watching %s (Tab)" % ["You fell." if p.fell else "Your lantern went out.", p.spectate_name()]
-	elif light >= Cfg.ESCAPE_LIGHT:
-		status_lbl.text = "Bright enough for the Sun Gate (80%)"
 	elif light < Cfg.DIM_LIGHT:
 		status_lbl.text = "FADING. You are slowed"
+	elif light >= Cfg.ESCAPE_LIGHT:
+		status_lbl.text = "Bright enough for the portal (80%)"
 	else:
-		status_lbl.text = "Reach 80% to use the Sun Gate"
+		status_lbl.text = "The portal needs 80% light"
+	for key in relic_slots:
+		var have: bool = p.relic_flare if key == "flare" else (p.relic_fruit if key == "fruit" else p.relic_potion)
+		relic_slots[key][0].modulate = Color(1, 1, 1, 1) if have else Color(0.35, 0.33, 0.4, 0.55)
+		relic_slots[key][1].label_settings.font_color = Color(1.0, 0.9, 0.55) if have else Color(0.65, 0.62, 0.7)
+	var carry: Array = []
+	carry.append(("[color=#9fdcff]EXTINGUISHER x%d[/color]" % p.extinguishers) if p.extinguishers > 0 else "[color=#8a8494]no extinguisher[/color]")
+	if p.wards > 0:
+		carry.append("[color=#fff2c0]SUN WARD[/color]")
+	carry_lbl.text = "    ".join(PackedStringArray(carry))
+	_update_boss(p)
 	# One compact row: bright = ready, grey = not available.
 	var on := "[color=#ffe7a8]"
 	var off := "[color=#8a8494]"
 	var tch: bool = main.touch != null
 	var flare_txt: String = (on + ("FLARE x%d" if tch else "Q flare x%d") % p.flares + "[/color]") if p.flares > 0 else (off + "no flares[/color]")
 	var push_txt: String = (on + ("PUSH" if tch else "E push") + "[/color]") if p.shove_cd <= 0.0 else (off + "push %ds[/color]" % int(ceil(p.shove_cd)))
-	var tool_txt: String = (on + ("HIT %d/%d" if tch else "CLICK hit %d/%d") % [p.tool_swings, Cfg.TOOL_SWINGS] + "[/color]") if p.tool_swings > 0 else (off + "no tool[/color]")
+	var tool_txt: String = (on + ("HIT %d/%d" if tch else "CLICK hit %d/%d") % [p.tool_swings, Cfg.TOOL_SWINGS] + "[/color]") if p.tool_swings > 0 else (off + "no weapon[/color]")
 	var brace_txt: String = (on + ("BRACE ready" if tch else "R-CLICK brace") + "[/color]") if (light >= Cfg.BRACE_LIGHT and p.brace_ready) else (off + "brace 70%+[/color]")
 	abil.text = "%s    %s    %s    %s" % [flare_txt, push_txt, tool_txt, brace_txt]
 	if p.autopilot:
@@ -899,8 +1088,8 @@ func _process(delta: float) -> void:
 func _update_roster() -> void:
 	var list: Array = main.survivors.duplicate()
 	list.sort_custom(func(a, b):
-		var sa: float = (300.0 if a.escaped else 0.0) + (a.light if a.alive else -100.0)
-		var sb: float = (300.0 if b.escaped else 0.0) + (b.light if b.alive else -100.0)
+		var sa: float = (300.0 if a.escaped else 0.0) + (a.light + a.relic_count() * 100.0 if a.alive else -100.0)
+		var sb: float = (300.0 if b.escaped else 0.0) + (b.light + b.relic_count() * 100.0 if b.alive else -100.0)
 		return sa > sb)
 	var txt := "[b]PILGRIMS[/b]\n"
 	for s in list:
@@ -920,5 +1109,8 @@ func _update_roster() -> void:
 			elif s.light < Cfg.DIM_LIGHT:
 				lc = "#ff6060"
 			right = "[color=%s]%d%%[/color]" % [lc, int(round(s.light))]
+			var rc: int = s.relic_count()
+			if rc > 0:
+				right += "  [color=%s]%d/3[/color]" % ["#ffd36a" if rc == 3 else "#b9a98a", rc]
 		txt += "[color=#%s]%s[/color]  %s\n" % [col.to_html(false), nm, right]
 	roster.text = txt

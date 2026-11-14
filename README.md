@@ -1,11 +1,12 @@
 # Last Light
 
-A 3-minute survival game made in Godot 4.7. Ten pilgrims race across floating garden
+A 3½-minute survival game made in Godot 4.7. Ten pilgrims race across floating garden
 islands as the sun sets, leaping between stepping stones over the Underglow, a glowing
-abyss. Your lantern is your health: grab glowing blooms, race rivals to falling
-Sunflares, shove them off the stones, time your jumps past swinging knife pendulums, survive the
-Hollows and the Devourer, and step
-through the Sun Gate with 80% light before the sun is gone.
+abyss. Your lantern is your health. Win three relics: a **Sunflare** that falls from
+the sky, the **Sky Fruit** from the walled Hidden Garden (kill the Thornback that
+guards it), and the **Moon Potion** from the Crystal Cave (past the Shardback). Then
+cross the gauntlet of fire vents and flying knives, douse the ring of fire with an
+extinguisher, and step through the portal with 80% light before the sun is gone.
 
 ## Download
 - **Latest builds:** open the [Actions](../../actions) tab, pick the newest
@@ -25,9 +26,9 @@ Android: install `LastLight-android.apk` (allow installs from unknown sources).
 | Sprint | Shift | Push the stick all the way |
 | Push a rival | E | PUSH |
 | Flare (blast hollows and rivals back) | Q / middle-click | FLARE |
-| Hit with a tool | Left-click | HIT |
+| Hit with a weapon | Left-click | HIT |
 | Brace (70%+ light) | Right-click | BRACE |
-| Skip the gate flyover | Any key | Tap |
+| Skip the flyover | Any key | Tap |
 | Autopilot | P | WATCH AI on the title screen |
 
 Start in **Gentle** mode for your first game.

@@ -14,6 +14,7 @@ const WyrmScript = preload("res://scripts/wyrm.gd")
 const BladesScript = preload("res://scripts/blades.gd")
 const Fonts = preload("res://scripts/fonts.gd")
 const DropScript = preload("res://scripts/drop.gd")
+const TrialsScript = preload("res://scripts/trials.gd")
 
 const C_INFO := Color(1.0, 0.88, 0.7)
 const C_DARK := Color(0.75, 0.6, 1.0)
@@ -31,10 +32,13 @@ var _last_tick := -1
 var _snap_t := 1.0
 var _quit_t := 0.0
 var gentle := false
-var stats := {"bloom": 0.0, "shard": 0.0, "damage": 0.0, "flare": 0.0, "kills": 0, "blooms": 0, "hollows": 0,
+var stats := {"bloom": 0.0, "shard": 0.0, "damage": 0.0, "flare": 0.0, "kills": 0, "blooms": 0, "hollows": 0, "fruit": 0, "potion": 0, "beast": 0, "crawler": 0, "doused": 0, "ready": 0,
 	"fell": 0, "shoves": 0, "pushed_off": 0, "wyrm": 0, "drops": 0}
 var wyrm
 var blades
+var trials
+var next_ext := 3.0
+var next_ward := 8.0
 var drops: Array = []
 var next_drop: float = Cfg.DROP_FIRST
 var next_wyrm: float = Cfg.WYRM_FIRST
@@ -50,7 +54,7 @@ var pickups: Array = []
 
 var state := "intro"
 var time_left: float = Cfg.MATCH_TIME
-var gate_open := false
+var gate_open := true # the portal is always open; the fire seal and the relics guard it
 var final_phase := false
 var next_bloom := 4.0
 var next_tool := 7.0
@@ -85,6 +89,10 @@ func _ready() -> void:
 	blades.main = self
 	add_child(blades)
 	blades.build(world)
+	trials = TrialsScript.new()
+	trials.name = "Trials"
+	add_child(trials)
+	trials.build(self)
 	if OS.has_feature("mobile") or args.has("touch"):
 		# Phones: on-screen controls, and stop taps from also acting as mouse clicks.
 		Input.emulate_mouse_from_touch = false
@@ -131,7 +139,7 @@ func _ready() -> void:
 	if (shot_path != "" and not args.has("intro")) or args.has("autostart"):
 		start_match()
 	elif not args.has("overview"):
-		# Behind the title screen: a slow orbit around the Sun Gate, the way out.
+		# Behind the title screen: a slow orbit around the portal, the way out.
 		intro_cam = Camera3D.new()
 		intro_cam.far = 2500.0
 		intro_cam.fov = 60.0
@@ -155,7 +163,7 @@ func _update_intro_cam(delta: float) -> void:
 	intro_cam.look_at(g + Vector3(0, 3.0, 0))
 
 
-## Before the match: show the Sun Gate up close, then fly back over the islands to you.
+## Before the match: show the portal, the gauntlet, the garden and the cave, then fly back to you.
 func _begin_flyover() -> void:
 	state = "flyover"
 	fly_t = 0.0
@@ -167,14 +175,21 @@ func _begin_flyover() -> void:
 	var end_pos: Vector3 = player.cam_pivot.global_position + back * 5.0
 	var end_look: Vector3 = end_pos - back * 30.0
 	# [time, camera position, look-at]
+	var gd: Vector3 = world.garden_center
+	var cv: Vector3 = world.cave_center
+	var cd: Vector3 = world.cave_dir
 	_fly_keys = [
-		[0.0, g + Vector3(5.0, 3.0, 9.0), g + Vector3(0, 3.0, 0)],
-		[2.6, g + Vector3(-6.0, 6.0, 16.0), g + Vector3(0, 3.5, 0)],
-		[4.6, h + Vector3(10.0, 16.0, -6.0), h + Vector3(0, -8.0, 14.0)],
-		[6.8, end_pos + Vector3(0, 6.0, 8.0), end_look],
-		[8.0, end_pos, end_look],
+		[0.0, g + Vector3(4.0, 3.0, 10.0), g + Vector3(0, 3.5, 0), "portal"],
+		[2.8, g + Vector3(-5.0, 7.0, 24.0), g + Vector3(0, 2.5, 0), "portal"],
+		[4.6, h + Vector3(6.0, 9.0, -14.0), h + Vector3(0, 2.0, -34.0), "gauntlet"],
+		[6.6, gd + Vector3(14.0, 11.0, 8.0), gd + Vector3(0, 2.5, 0), "garden"],
+		[8.6, gd + Vector3(8.0, 6.0, -6.0), gd + Vector3(1.0, 2.0, 1.0), "garden"],
+		[10.6, cv + cd * 17.0 + Vector3(0, 6.0, 0), cv + Vector3(0, 1.5, 0), "cave"],
+		[12.6, cv + cd * 12.0 + Vector3(0, 3.0, 0), cv + Vector3(0, 1.0, 0), "cave"],
+		[14.6, end_pos + Vector3(0, 6.0, 8.0), end_look, ""],
+		[15.8, end_pos, end_look, ""],
 	]
-	hud.flyover_caption(true)
+	hud.flyover_caption(true, "portal")
 
 
 func _update_flyover(delta: float) -> void:
@@ -194,8 +209,7 @@ func _update_flyover(delta: float) -> void:
 			var lb: Vector3 = b[2]
 			intro_cam.global_position = pa.lerp(pb, k)
 			intro_cam.look_at(la.lerp(lb, k))
-			if fly_t > 3.2:
-				hud.flyover_caption(false)
+			hud.flyover_caption(String(a[3]) != "", String(a[3]))
 			return
 
 
@@ -339,6 +353,16 @@ func _find_item_spawn():
 
 func _spawn_pickup(kind: String, at = null) -> void:
 	var p = at
+	if p == null and kind == "tool" and randf() < 0.5:
+		var spots: Array = world.garden_gates.duplicate()
+		spots.append(world.cave_door)
+		var sp: Vector3 = spots.pick_random()
+		var out: Vector3 = sp - (world.garden_center if sp != world.cave_door else world.cave_center)
+		out.y = 0.0
+		var q0: Vector3 = sp + out.normalized() * randf_range(1.6, 2.6) + Vector3(randf_range(-1.5, 1.5), 0, randf_range(-1.5, 1.5))
+		if world.island_at(q0) >= 0 and world.is_clear(q0, 0.8):
+			q0.y = world.ground_at(q0)
+			p = q0
 	if p == null and kind == "tool":
 		var blooms := _list("bloom")
 		if not blooms.is_empty() and randf() < 0.7:
@@ -367,6 +391,37 @@ func _spawn_pickup(kind: String, at = null) -> void:
 	pk.position = p
 	add_child(pk)
 	pickups.append(pk)
+
+
+## A relic placed exactly (the fruit under the tree, the potion on the altar).
+func spawn_relic(kind: String, p: Vector3) -> void:
+	var pk = PickupScript.new()
+	pk.kind = kind
+	pk.heal = Cfg.FRUIT_HEAL if kind == "fruit" else Cfg.POTION_HEAL
+	pk.position = p
+	add_child(pk)
+	pickups.append(pk)
+
+
+## Extinguishers and Sun Wards appear on the open islands (never in the garden, the cave
+## or the portal isle), mostly on Heart Rock and the meadow, near the start of the gauntlet.
+func _tick_trial_spawns(delta: float) -> void:
+	next_ext -= delta
+	if next_ext <= 0.0:
+		next_ext = randf_range(Cfg.EXT_INTERVAL.x, Cfg.EXT_INTERVAL.y)
+		if _list("extinguisher").size() < Cfg.MAX_EXTINGUISHERS:
+			var isl: int = [world.HEART_ISLAND, world.HEART_ISLAND, world.START_ISLAND, 1, 2].pick_random()
+			var q = world.random_island_point(isl, 1.6, 1.2)
+			if q != null and not world.in_any_shrine(q, 0.5):
+				_spawn_pickup("extinguisher", q)
+	next_ward -= delta
+	if next_ward <= 0.0:
+		next_ward = randf_range(Cfg.WARD_INTERVAL.x, Cfg.WARD_INTERVAL.y)
+		if _list("ward").size() < Cfg.MAX_WARDS:
+			var isl2: int = [world.START_ISLAND, 1, 2, world.HEART_ISLAND].pick_random()
+			var q2 = world.random_island_point(isl2, 1.6, 1.2)
+			if q2 != null:
+				_spawn_pickup("ward", q2)
 
 
 func _find_hollow_spawn():
@@ -445,6 +500,19 @@ func _active_hollows() -> int:
 
 func _physics_process(delta: float) -> void:
 	_frames += 1
+	if _frames == 12 and args.has("cavetest"):
+		var map2: RID = world.get_world_3d().navigation_map
+		var inside: Vector3 = world.cave_center + world.cave_dir * 2.5
+		for from2 in [world.cave_door + world.cave_dir * 3.0, world.garden_center + Vector3(0, 0, 9.0)]:
+			var tgt2: Vector3 = inside if from2.distance_to(world.cave_center) < 20.0 else world.tree_pos + Vector3(3, 0, 0)
+			var path2 := NavigationServer3D.map_get_path(map2, from2, tgt2, true)
+			print("CAVETEST from ", from2.snapped(Vector3.ONE * 0.1), " to ", tgt2.snapped(Vector3.ONE * 0.1), " pts ", path2.size(), " end ", path2[path2.size() - 1].snapped(Vector3.ONE * 0.1) if path2.size() > 0 else Vector3.INF)
+		var space: PhysicsDirectSpaceState3D = world.get_world_3d().direct_space_state
+		for k in 9:
+			var d: float = 12.0 - k * 1.5
+			var q := PhysicsRayQueryParameters3D.create(world.cave_center + world.cave_dir * d + Vector3(0, 6, 0), world.cave_center + world.cave_dir * d + Vector3(0, -2, 0), 1 | 4)
+			var hit: Dictionary = space.intersect_ray(q)
+			print("  ray at d=%.1f hit y=%s" % [d, str(hit.position.y) if not hit.is_empty() else "none"])
 	if _frames == 10 and args.has("navtest"):
 		var nm: NavigationMesh = world.nav_region.navigation_mesh
 		print("nav polys: ", nm.get_polygon_count(), " verts: ", nm.get_vertices().size())
@@ -514,8 +582,6 @@ func _physics_process(delta: float) -> void:
 	time_left = maxf(0.0, time_left - delta)
 	world.update_time(frac())
 	_update_shrines()
-	if not gate_open and time_left <= Cfg.GATE_OPEN_AT:
-		_open_gate()
 	if not final_phase and time_left <= Cfg.FINAL_PHASE_AT:
 		_start_final()
 	var sec := int(ceil(time_left))
@@ -524,6 +590,7 @@ func _physics_process(delta: float) -> void:
 		sfx.play("tick", null, -2.0 + (10 - sec) * 0.4, 1.0 + (10 - sec) * 0.03)
 		hud.pulse_clock()
 	_tick_spawns(delta)
+	_tick_trial_spawns(delta)
 	_tick_drops(delta)
 	_tick_wyrm(delta)
 	if args.has("log") and int(time_left * 60.0) % 600 == 0:
@@ -585,7 +652,7 @@ func _check_pickups() -> void:
 		for s in survivors:
 			if not s.alive or s.escaped:
 				continue
-			if _flat(s.global_position, pk.global_position) > 1.3:
+			if _flat(s.global_position, pk.global_position) > (2.1 if pk.kind == "potion" else 1.3):
 				continue
 			if absf(s.global_position.y - pk.global_position.y) > 2.2:
 				continue
@@ -594,12 +661,55 @@ func _check_pickups() -> void:
 			if pk.kind == "flare":
 				s.add_flares(Cfg.DROP_FLARES)
 				s.heal(pk.heal * heal_mult(s))
+				var first: bool = not s.relic_flare
+				s.relic_flare = true
 				if s.is_player:
-					hud.toast("+%d FLARES  (%s to blast hollows and rivals)" % [Cfg.DROP_FLARES, hud.k("flare")])
+					if first:
+						hud.banner("SUNFLARE RELIC  1 of 3  ✓\n+%d flares. %s" % [Cfg.DROP_FLARES, _relic_next(s)], 3.5)
+					else:
+						hud.toast("+%d FLARES  (%s to blast hollows and rivals)" % [Cfg.DROP_FLARES, hud.k("flare")])
 					shake_near(pk.global_position, 1.0, 0.25)
 				else:
 					feed("%s grabbed the Sunflare." % s.display_name, C_INFO)
+				_relic_check(s)
 				_take(pk, Color(1.0, 0.6, 0.2), "flare_get", s.is_player)
+				break
+			if pk.kind == "fruit" or pk.kind == "potion":
+				var is_fruit: bool = pk.kind == "fruit"
+				if (is_fruit and s.relic_fruit) or (not is_fruit and s.relic_potion):
+					continue
+				if is_fruit:
+					s.relic_fruit = true
+					stats["fruit"] += 1
+				else:
+					s.relic_potion = true
+					stats["potion"] += 1
+					trials.on_potion_taken()
+				s.heal(pk.heal * heal_mult(s))
+				var nm := "SKY FRUIT" if is_fruit else "MOON POTION"
+				if s.is_player:
+					hud.banner("%s  %d of 3  ✓\n%s" % [nm, s.relic_count(), _relic_next(s)], 3.5)
+					shake_near(pk.global_position, 1.0, 0.2)
+				else:
+					feed("%s took the %s." % [s.display_name, nm.capitalize()], Color(1.0, 0.8, 0.45) if is_fruit else Color(0.8, 0.6, 1.0))
+				_relic_check(s)
+				_take(pk, Color(1.0, 0.75, 0.3) if is_fruit else Color(0.7, 0.45, 1.0), "flare_get", s.is_player)
+				break
+			if pk.kind == "extinguisher":
+				if s.extinguishers >= Cfg.EXT_MAX_HELD:
+					continue
+				s.extinguishers += 1
+				if s.is_player:
+					hud.toast("EXTINGUISHER (%d)  ·  walk into the portal's fire to put it out" % s.extinguishers)
+				_take(pk, Color(0.6, 0.85, 1.0), "tool", s.is_player)
+				break
+			if pk.kind == "ward":
+				if s.wards >= Cfg.WARD_MAX_HELD:
+					continue
+				s.wards += 1
+				if s.is_player:
+					hud.toast("SUN WARD  ·  it will take the next hit for you")
+				_take(pk, Color(1.0, 0.95, 0.7), "chime2", s.is_player)
 				break
 			if pk.kind == "tool":
 				if s.tool_swings > 0:
@@ -635,25 +745,39 @@ func _check_gate() -> void:
 	for s in survivors:
 		if not s.alive or s.escaped:
 			continue
-		if _flat(s.global_position, gp) > 1.7 or s.global_position.y < gp.y - 1.0:
+		if _flat(s.global_position, gp) > 1.9 or s.global_position.y < gp.y - 1.0:
 			continue
-		if not gate_open:
-			if s.is_player and s.gate_msg_cd <= 0.0:
-				s.gate_msg_cd = 3.0
-				hud.toast("The Sun Gate is sealed until %s" % hud._clock_text(Cfg.GATE_OPEN_AT))
-			continue
-		if s.light >= Cfg.ESCAPE_LIGHT:
+		if s.has_all_relics() and s.light >= Cfg.ESCAPE_LIGHT:
 			s.escape()
-		else:
-			var out := Vector3(s.global_position.x - gp.x, 0, s.global_position.z - gp.z)
-			if out.length() < 0.1:
-				out = Vector3(1, 0, 0)
-			s.push(out.normalized() * 9.0)
-			if s.is_player and s.gate_msg_cd <= 0.0:
-				s.gate_msg_cd = 2.0
-				sfx.play("deny")
-				player.shake = 0.3
-				hud.banner("The gate rejects your dim light\nYou have %d%%, you need 80%%" % int(s.light), 2.5)
+			continue
+		var out := Vector3(s.global_position.x - gp.x, 0, s.global_position.z - gp.z)
+		if out.length() < 0.1:
+			out = Vector3(world.portal_front.x - gp.x, 0, world.portal_front.z - gp.z)
+		s.push(out.normalized() * 9.0)
+		if s.is_player and s.gate_msg_cd <= 0.0:
+			s.gate_msg_cd = 2.0
+			sfx.play("deny")
+			player.shake = 0.3
+			if not s.has_all_relics():
+				hud.banner("The portal rejects you\nStill missing: %s" % ", ".join(s.missing_relics()), 3.0)
+			else:
+				hud.banner("The portal rejects your dim light\nYou have %d%%, you need 80%%" % int(s.light), 2.5)
+
+
+## What the player should go for next, in words.
+func _relic_next(s) -> String:
+	if s.has_all_relics():
+		if s.light >= Cfg.ESCAPE_LIGHT:
+			return "All three! Cross the gauntlet to the PORTAL."
+		return "All three! Get to 80%% light, then the PORTAL."
+	return "Still need: %s" % ", ".join(s.missing_relics())
+
+
+func _relic_check(s) -> void:
+	if s.has_all_relics():
+		stats["ready"] += 1
+		if not s.is_player:
+			feed("%s holds all three relics!" % s.display_name, C_GOOD)
 
 
 func _open_gate() -> void:
@@ -671,7 +795,7 @@ func _start_final() -> void:
 		if is_instance_valid(h):
 			h.persistent = true
 	sfx.play("toll", null, 0.0, 0.6)
-	hud.banner("NIGHT FALLS\nThe shrines are dark. The hollows gather at the gate.", 4.5)
+	hud.banner("NIGHT FALLS\nThe shrines are dark. The hollows gather at the portal.", 4.5)
 	feed("The shrines have gone dark.", C_DARK)
 
 
@@ -704,18 +828,31 @@ func _end_match() -> void:
 	hud.show_end(title, escaped_names, lost_names)
 	if args.has("log"):
 		print("MATCH OVER: ", title, " | escaped: ", escaped_names, " | lost: ", lost_names)
-		print("RESULT esc=%d player=%s bloom=%d shard=%d damage=%d flare=%d kills=%d blooms=%d hollows=%d fell=%d shoves=%d pushed_off=%d wyrm=%d drops=%d" % [
+		print("RESULT esc=%d player=%s bloom=%d shard=%d damage=%d flare=%d kills=%d blooms=%d hollows=%d fell=%d shoves=%d pushed_off=%d wyrm=%d drops=%d fruit=%d potion=%d beast=%d crawler=%d doused=%d ready=%d" % [
 			escaped_names.size(), "esc" if player.escaped else ("alive" if player.lost else ("fell" if player.fell else "dead")),
 			stats["bloom"], stats["shard"], stats["damage"], stats["flare"], stats["kills"], stats["blooms"], stats["hollows"],
-			stats["fell"], stats["shoves"], stats["pushed_off"], stats["wyrm"], stats["drops"]])
+			stats["fell"], stats["shoves"], stats["pushed_off"], stats["wyrm"], stats["drops"],
+			stats["fruit"], stats["potion"], stats["beast"], stats["crawler"], stats["doused"], stats["ready"]])
 
 
 func _log_status() -> void:
 	var parts: Array = []
 	for s in survivors:
 		var tag := "esc" if s.escaped else ("%d" % int(s.light) if s.alive else ("F" if s.fell else "X"))
-		parts.append("%s:%s%s" % [s.display_name, tag, "*" if s.tool_swings > 0 else ""])
+		var rel := ("S" if s.relic_flare else "") + ("F" if s.relic_fruit else "") + ("P" if s.relic_potion else "")
+		parts.append("%s:%s%s%s%s" % [s.display_name, tag, "*" if s.tool_swings > 0 else "", "[%s]" % rel if rel != "" else "", "e%d" % s.extinguishers if s.extinguishers > 0 else ""])
 	print("t=%03d fps=%d hollows=%d blooms=%d | %s" % [int(time_left), Engine.get_frames_per_second(), _active_hollows(), _list("bloom").size(), " ".join(PackedStringArray(parts))])
+	if args.has("trialtrace"):
+		var pot = trials.potion
+		var near := INF
+		var who := ""
+		for s2 in survivors:
+			if s2.alive and not s2.escaped and pot != null and is_instance_valid(pot):
+				var d2 := _flat(s2.global_position, pot.global_position)
+				if d2 < near:
+					near = d2
+					who = "%s y=%.1f" % [s2.display_name, s2.global_position.y]
+		print("  potion=%s pos=%s nearest=%.2f %s | crawler=%d hp=%d pos=%s | beast=%d hp=%d" % [trials.potion_ready(), pot.global_position if pot != null and is_instance_valid(pot) else Vector3.ZERO, near, who, trials.crawler.state, trials.crawler.hp, trials.crawler.global_position.snapped(Vector3.ONE * 0.1), trials.beast.state, trials.beast.hp])
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -840,6 +977,21 @@ func nearest_hollow(from: Vector3, max_d: float):
 func find_hollow_in_arc(origin: Vector3, facing: Vector3, reach: float):
 	var best = null
 	var bd := reach
+	for g in trials.guardians():
+		if not g.is_active():
+			continue
+		var tg: Vector3 = g.global_position - origin
+		if absf(tg.y) > 2.5:
+			continue
+		tg.y = 0.0
+		var dg: float = tg.length() - float(g.body_radius())
+		if dg > reach:
+			continue
+		if dg > 0.6 and tg.normalized().dot(facing) < 0.2:
+			continue
+		if dg < bd:
+			bd = dg
+			best = g
 	for h in hollows:
 		if not is_instance_valid(h) or not h.is_active():
 			continue
@@ -921,6 +1073,9 @@ func do_flare(s) -> void:
 	for h in hollows:
 		if is_instance_valid(h) and h.is_active() and _flat(h.global_position, p) <= Cfg.FLARE_RADIUS:
 			h.stagger(p, Cfg.FLARE_PUSH)
+	for g in trials.guardians():
+		if g.is_active() and _flat(g.global_position, p) <= Cfg.FLARE_RADIUS + g.body_radius() and absf(g.global_position.y - p.y) < 3.0:
+			g.hurt(Cfg.GUARD_FLARE_DAMAGE, p, 6.0)
 	# The blast also throws other pilgrims back: a weapon out on the stones.
 	for o in survivors:
 		if o == s or not o.alive or o.escaped or args.has("noshove"):
@@ -952,6 +1107,48 @@ func on_hollow_killed(h) -> void:
 		feed("A hollow shatters into a light shard.", C_GOOD)
 
 
+func on_guardian_woke(g) -> void:
+	if player.alive and not player.escaped and _flat(g.global_position, player.global_position) < 30.0:
+		hud.alert("THE %s AWAKES" % g.display, Color(1.0, 0.45, 0.3), 2.5)
+	elif g.kind == "beast":
+		feed("The Thornback is awake in the Hidden Garden.", C_BAD)
+
+
+func on_guardian_down(g) -> void:
+	stats[g.kind] += 1
+	var near: bool = player.alive and not player.escaped and _flat(g.global_position, player.global_position) < 30.0
+	if g.kind == "beast":
+		trials.on_beast_down()
+		feed("The Thornback has fallen! The Sky Fruit drops from the tree.", C_GOOD)
+		if near:
+			hud.banner("THE THORNBACK FALLS\nGrab a SKY FRUIT before the others do!", 3.0)
+	else:
+		feed("The Shardback shatters in the Crystal Cave.", C_GOOD)
+		if near:
+			hud.banner("THE SHARDBACK SHATTERS\nTake the MOON POTION from the altar!", 3.0)
+
+
+func on_guardian_reformed(g) -> void:
+	if g.kind == "beast":
+		trials.on_beast_reformed()
+		feed("The Thornback has grown back under the fruit tree.", C_DARK)
+	else:
+		feed("The Shardback re-forms in the Crystal Cave.", C_DARK)
+
+
+func on_fruit_fell() -> void:
+	sfx.play("chime3", world.tree_pos, 2.0)
+	fx_burst(world.tree_pos + Vector3(0, 4.0, 0), Color(1.0, 0.75, 0.3), 40, false, 3.0)
+
+
+func on_seal_doused(s) -> void:
+	stats["doused"] += 1
+	if s.is_player:
+		hud.toast("You doused the flames! The way to the portal is open for %ds" % int(Cfg.SEAL_OUT_TIME))
+	elif player.alive and not player.escaped and _flat(world.gate_pos, player.global_position) < 40.0:
+		feed("%s put out part of the fire seal." % s.display_name, C_INFO)
+
+
 func on_survivor_down(s) -> void:
 	if args.has("log"):
 		print("DOWN %s cause=%s t=%d pos=%s goal=%s shover=%s" % [s.display_name, s.cause, int(time_left), s.global_position.snapped(Vector3.ONE * 0.1),
@@ -961,7 +1158,9 @@ func on_survivor_down(s) -> void:
 		var now := Time.get_ticks_msec()
 		var msg := "%s fell into the Underglow." % s.display_name
 		if now - int(s.last_blade_ms) < 5000:
-			msg = "A swinging blade threw %s into the Underglow!" % ("you" if s.is_player else s.display_name)
+			msg = "A blade threw %s into the Underglow!" % ("you" if s.is_player else s.display_name)
+		elif now - int(s.last_fire_ms) < 5000:
+			msg = "The fire threw %s into the Underglow!" % ("you" if s.is_player else s.display_name)
 		elif now - int(s.last_wyrm_ms) < 6000:
 			msg = "The Devourer swept %s into the Underglow!" % ("you" if s.is_player else s.display_name)
 		elif s.last_shover != null and now - int(s.last_shove_ms) < 4500:
@@ -1004,7 +1203,7 @@ func _tick_drops(delta: float) -> void:
 		for attempt in 10:
 			var isl: int = world.HEART_ISLAND if randf() < 0.2 else -1
 			var q = world.random_island_point(isl, 2.0, 0.5)
-			if q != null and not world.in_any_shrine(q, 0.5):
+			if q != null and not world.in_any_shrine(q, 0.5) and not world.in_cave(q, 1.5) and world.island_at(q) != world.GATE_ISLAND:
 				p = q
 				break
 	if p == null:
@@ -1153,7 +1352,7 @@ func _tick_wyrm(delta: float) -> void:
 		if not s.alive or s.escaped:
 			continue
 		var bi: int = world.bridge_at(s.global_position, 0.5)
-		if bi < 0:
+		if bi < 0 or bi == world.GAUNTLET:
 			continue
 		cands.append([bi, s])
 		if s.is_player:
@@ -1171,6 +1370,8 @@ func _tick_wyrm(delta: float) -> void:
 		# Nobody out on the stones: rise somewhere the player can see it anyway.
 		var bd := INF
 		for i in world.bridges.size():
+			if i == world.GAUNTLET:
+				continue
 			for st in world.bridges[i]["stones"]:
 				var d: float = st.distance_to(player.global_position)
 				if d < bd:
@@ -1220,12 +1421,12 @@ func wyrm_escape_point(p: Vector3, reaction := 0.0):
 
 
 func on_survivor_escaped(s) -> void:
-	fx_light(world.gate_pos + Vector3(0, 2.5, 0), Color(1.0, 0.85, 0.5), 12.0, 20.0, 1.2)
+	fx_light(world.gate_pos + Vector3(0, 3.5, 0), Color(1.0, 0.85, 0.5), 12.0, 20.0, 1.2)
 	world.escape_beam()
 	sfx.play("escape", null if s.is_player else world.gate_pos + Vector3(0, 2, 0), 0.0)
-	feed("%s stepped through the Sun Gate." % s.display_name, C_GOOD)
+	feed("%s stepped through the portal." % s.display_name, C_GOOD)
 	if s.is_player:
-		hud.banner("YOU PASSED THROUGH THE SUN GATE", 4.0)
+		hud.banner("YOU PASSED THROUGH THE PORTAL", 4.0)
 
 
 ## One-shot particle burst: sparkles (glow) or a dark smoke puff.

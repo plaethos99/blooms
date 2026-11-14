@@ -9,16 +9,23 @@ const ISLANDS := [
 	["Dawn Meadow", 0.0, 0.0, 0.0, 20.0],
 	["Lantern Grove", -46.0, -12.0, 2.5, 14.0],
 	["Ember Rocks", 46.0, -14.0, 0.0, 13.0],
-	["Mirror Pond", -32.0, -60.0, 7.0, 13.0],
-	["Bell Ruins", 32.0, -62.0, 5.5, 12.0],
-	["Heart Rock", 0.0, -50.0, 4.0, 6.5],
-	["Sun Gate Isle", 0.0, -100.0, 10.0, 13.0],
+	["Hidden Garden", -42.0, -64.0, 6.5, 16.0],
+	["Crystal Cave", 42.0, -64.0, 5.0, 13.5],
+	["Heart Rock", 0.0, -48.0, 4.0, 9.0],
+	["Portal Isle", 0.0, -112.0, 10.0, 13.0],
 ]
 const START_ISLAND := 0
 const HEART_ISLAND := 5
-const GATE_ISLAND := 6
-const SHRINE_SPOTS := [[1, 0.0, 0.0], [2, 0.0, 0.0], [3, 4.0, -3.0], [4, 0.0, 0.0]] # island, dx, dz
-const BRIDGES := [[0, 1], [0, 2], [1, 3], [2, 4], [3, 6], [4, 6], [0, 5], [5, 6]]
+const GATE_ISLAND := 6 # the portal
+const GARDEN_ISLAND := 3
+const CAVE_ISLAND := 4
+const SHRINE_SPOTS := [[1, 0.0, 0.0], [2, 0.0, 0.0], [5, 0.0, 2.5]] # island, dx, dz
+const BRIDGES := [[0, 1], [0, 2], [1, 3], [2, 4], [0, 5], [3, 5], [4, 5], [5, 6]]
+const GAUNTLET := 7 # index in BRIDGES: the causeway of fire and knives to the portal
+const GARDEN_WALL_INSET := 3.4 # the garden wall stands this far inside the island rim
+const CAVE_OFFSET := 4.3 # the cave dome sits this far from its island's centre, away from the bridges
+const CAVE_R := 9.2 # outer radius of the dome at the ground
+const CAVE_INNER := 7.3 # walkable radius inside
 const WATERFALLS := [[0, 2], [1, 1], [3, 1], [4, 1], [6, 2]] # island, count
 const STONE_H := 0.7
 const STONE_GAP := 1.45
@@ -265,21 +272,22 @@ void fragment() {
 const PORTAL_SHADER := """
 shader_type spatial;
 render_mode unshaded, cull_disabled, blend_add, depth_draw_never;
-uniform float open = 0.0;
+uniform float open = 1.0;
 void fragment() {
-	// Quad 3.1 x 5.8 m; the arch springs 3.95 m up with a 1.55 m radius.
-	vec2 m = vec2((UV.x - 0.5) * 3.1, (1.0 - UV.y) * 5.8);
-	if (m.y > 3.95 && length(m - vec2(0.0, 3.95)) > 1.55) {
+	vec2 uv = UV - vec2(0.5);
+	float r = length(uv) * 2.0; // 1.0 at the inner edge of the stone ring
+	if (r > 1.0) {
 		discard;
 	}
-	vec2 uv = UV - vec2(0.5);
-	float r = length(uv * vec2(1.0, 0.7));
 	float ang = atan(uv.y, uv.x);
-	float swirl = 0.5 + 0.5 * sin(ang * 5.0 + r * 18.0 - TIME * 2.5);
-	float edge = 1.0 - smoothstep(0.22, 0.5, r);
-	vec3 c = mix(vec3(1.0, 0.5, 0.2), vec3(1.0, 0.95, 0.75), swirl);
-	float a = edge * mix(0.1, 1.0, open) * (0.55 + 0.45 * swirl);
-	ALBEDO = c * a * mix(0.8, 3.0, open);
+	float swirl = 0.5 + 0.5 * sin(ang * 3.0 + log(r + 0.05) * 7.0 - TIME * 3.0);
+	float swirl2 = 0.5 + 0.5 * sin(ang * 7.0 - r * 20.0 + TIME * 1.7);
+	float core = 1.0 - smoothstep(0.0, 0.35, r);
+	float rim = smoothstep(0.75, 0.98, r) * (1.0 - smoothstep(0.98, 1.0, r));
+	vec3 c = mix(vec3(0.95, 0.35, 0.08), vec3(1.0, 0.85, 0.5), swirl * 0.6 + swirl2 * 0.3);
+	c += vec3(1.0, 0.9, 0.7) * core * 0.8 + vec3(1.0, 0.55, 0.15) * rim * 1.2;
+	float a = (0.45 + 0.55 * swirl) * (1.0 - smoothstep(0.9, 1.0, r) * 0.4);
+	ALBEDO = c * a * mix(0.2, 1.15, open);
 	ALPHA = a;
 }
 """
@@ -388,6 +396,17 @@ var bridge_angles := {} # island -> Array of angles (radians) where bridges leav
 var waterfalls: Array = [] # lip positions, for sound
 var pools: Array = [] # [Vector3 pos, radius] of water on island tops
 var pond_pos := Vector3.ZERO
+var garden_center := Vector3.ZERO
+var garden_gates: Array = [] # world positions of the gateways in the garden wall
+var tree_pos := Vector3.ZERO # the Sky Fruit tree
+var fruit_lights: Array = [] # [mesh, light] on the tree; they glow while fruit is ripe
+var fruit_mat: StandardMaterial3D
+var cave_center := Vector3.ZERO # centre of the dome, on the floor
+var cave_door := Vector3.ZERO # just outside the doorway
+var cave_dir := Vector3.ZERO # from the dome centre out through the doorway
+var altar_pos := Vector3.ZERO # top of the altar, where the potion rests
+var crystal_mat: StandardMaterial3D
+var portal_front := Vector3.ZERO # where you step through, on the causeway side
 var lights_out_mode := false
 var _night := 0.0
 var _t := 0.0
@@ -426,6 +445,8 @@ func build() -> void:
 	_build_islands()
 	_build_bridges()
 	_build_gate()
+	_build_garden()
+	_build_cave()
 	_build_shrines()
 	_build_island_features()
 	_build_waterfalls()
@@ -819,6 +840,11 @@ func _make_materials() -> void:
 		"bark": _trunk,
 		"blossom": _foliage("card_blossom", Color(1, 1, 1), 0.12),
 		"leaves": _foliage("card_leaves", Color(0.9, 1.0, 0.9), 0.0),
+		"caverock": _terrain("tex_cave_rock", "tex_rock_dark", 0.3, 0.25, Color(0.8, 0.78, 0.85), Color(0.5, 0.6, 0.5), 0.6, 0.0),
+		"cavefloor": _terrain("tex_cave_rock", "tex_rock_dark", 0.4, 0.3, Color(0.55, 0.53, 0.6), Color(0.6, 0.6, 0.65), 0.0, 0.5),
+		"wallstone": _terrain("tex_garden_wall", "tex_moss_stone", 0.42, 0.5, Color(1.0, 0.97, 0.92), Color(0.6, 0.72, 0.45), 1.0, 0.0),
+		"iron": _iron,
+		"crystal": null,
 	}
 	_canopies = [_model_mats["blossom"]]
 	_orb_mat = _mat(Color(1.0, 0.85, 0.5), 0.4, Color(1.0, 0.75, 0.35), 1.0)
@@ -831,6 +857,15 @@ func _make_materials() -> void:
 	glow_mats.append([_under_crystal, 2.0, 6.0])
 	_amber = _mat(Color(1.0, 0.65, 0.3), 0.25, Color(1.0, 0.5, 0.15), 1.5)
 	glow_mats.append([_amber, 1.5, 4.5])
+	crystal_mat = _photo_mat("tex_crystal", 1.2, 0.15, Color(0.55, 0.35, 0.85), 0.4)
+	crystal_mat.emission_enabled = true
+	crystal_mat.emission = Color(0.45, 0.15, 0.9)
+	crystal_mat.emission_texture = _tex_load("tex_crystal")
+	crystal_mat.emission_energy_multiplier = 0.55
+	crystal_mat.metallic_specular = 0.9
+	glow_mats.append([crystal_mat, 0.55, 1.4])
+	_model_mats["crystal"] = crystal_mat
+	fruit_mat = _mat(Color(1.0, 0.75, 0.25), 0.3, Color(1.0, 0.6, 0.15), 2.5)
 
 
 ## Places a model made in Blender (3d/tests/lastlight_world/scripts/build_world.py)
@@ -854,7 +889,7 @@ func _apply_model_mats(n: Node) -> void:
 			var key: String = src.resource_name if src else mi.mesh.surface_get_name(i)
 			key = key.to_lower()
 			for k in _model_mats:
-				if key.begins_with(k):
+				if _model_mats[k] != null and key.begins_with(k):
 					mi.set_surface_override_material(i, _model_mats[k])
 					break
 	for c in n.get_children():
@@ -979,7 +1014,8 @@ func _build_bridges() -> void:
 		var dir := flat / dist
 		var perp := Vector3(-dir.z, 0, dir.x)
 		var L := dist - ra - rb
-		var n := maxi(1, roundi((L - STONE_GAP) / (2.8 + STONE_GAP)))
+		var gauntlet := bi == GAUNTLET
+		var n := maxi(1, roundi((L - STONE_GAP) / ((4.0 if gauntlet else 2.8) + STONE_GAP)))
 		var radii: Array = []
 		var total := 0.0
 		var gap := 0.0
@@ -988,7 +1024,7 @@ func _build_bridges() -> void:
 			radii.clear()
 			total = 0.0
 			for s in n:
-				var rr := randf_range(1.2, 1.6)
+				var rr := randf_range(1.85, 2.15) if gauntlet else randf_range(1.2, 1.6)
 				radii.append(rr)
 				total += rr * 2.0
 			# Pick some gaps between two stones at random (never two in a row) and widen them.
@@ -996,7 +1032,7 @@ func _build_bridges() -> void:
 			var inner: Array = range(1, n)
 			inner.shuffle()
 			for k in inner:
-				if blade_gaps.size() >= maxi(1, int(n / 2.0)):
+				if blade_gaps.size() >= (2 if gauntlet else maxi(1, int(n / 2.0))):
 					break
 				if blade_gaps.has(k - 1) or blade_gaps.has(k + 1):
 					continue
@@ -1025,12 +1061,12 @@ func _build_bridges() -> void:
 			var hi := minf(prev_y + MAX_STEP, B.y + MAX_STEP * hops_left)
 			if lo > hi + 0.01:
 				push_warning("bridge %d cannot keep steps small" % bi)
-			var want := lerpf(A.y, B.y, float(s + 1) / float(n + 1)) + sin(float(s) * 1.9 + phase) * amp + randf_range(-0.3, 0.3)
+			var want := lerpf(A.y, B.y, float(s + 1) / float(n + 1)) + (sin(float(s) * 1.9 + phase) * amp + randf_range(-0.3, 0.3)) * (0.3 if gauntlet else 1.0)
 			var y := clampf(want, lo, hi)
 			prev_y = y
-			var p := A + dir * along + perp * randf_range(-0.35, 0.35)
+			var p := A + dir * along + perp * (0.0 if gauntlet else randf_range(-0.35, 0.35))
 			p.y = y
-			_build_stone(p, rad, rune)
+			_build_stone(p, rad, rune, gauntlet)
 			stones.append(p)
 			along += rad
 		var head_a := A + dir * (ra - 1.3)
@@ -1052,8 +1088,10 @@ func _build_bridges() -> void:
 		})
 
 
-func _build_stone(p: Vector3, r: float, rune: Material) -> void:
-	_model("res://models/stone_%d.glb" % (randi() % 6), self, p, Vector3(0, randf() * TAU, 0), Vector3(r, r * 0.9, r))
+func _build_stone(p: Vector3, r: float, rune: Material, scorched := false) -> void:
+	var st := _model("res://models/stone_%d.glb" % (randi() % 6), self, p, Vector3(0, randf() * TAU, 0), Vector3(r, r * (0.6 if scorched else 0.9), r))
+	if scorched:
+		_set_surface_mat(st, "stonetop", _scorched_mat())
 	var ring := TorusMesh.new()
 	ring.inner_radius = r - 0.3
 	ring.outer_radius = r - 0.16
@@ -1102,42 +1140,45 @@ func _lamp(pos: Vector3) -> void:
 
 
 func _build_gate() -> void:
+	# The portal: a ring of carved stone on Portal Isle, facing the causeway. A ring of fire
+	# seals it (see trials.gd); the portal itself is always open.
 	var c := island_center(GATE_ISLAND)
-	var top := c.y
 	gate_pos = c
+	var to_h := island_center(HEART_ISLAND) - c
+	to_h.y = 0.0
+	var dir := to_h.normalized()
+	var yaw := atan2(dir.x, dir.z)
+	var basis := Basis(Vector3.UP, yaw)
+	portal_front = c + dir * 2.0
+	_model("res://models/portal_ring.glb", self, c, Vector3(0, yaw, 0))
+	for sx in [-1.0, 1.0]:
+		var sh := BoxShape3D.new()
+		sh.size = Vector3(0.9, 5.2, 1.0)
+		_static(sh, c + basis * Vector3(3.15 * float(sx), 2.6, 0), LAYER_OBSTACLE, Vector3(0, yaw, 0))
 	var gold := _mat(Color(0.95, 0.72, 0.32), 0.3, Color(1.0, 0.68, 0.3), 1.2)
 	gold.metallic = 0.8
 	glow_mats.append([gold, 1.2, 3.0])
-	var plinth := CylinderMesh.new()
-	plinth.top_radius = 3.4
-	plinth.bottom_radius = 3.6
-	plinth.height = 0.1
-	plinth.radial_segments = 48
-	_mesh(self, plinth, _marble, c + Vector3(0, 0.02, 0))
-	# The marble arch, modelled in Blender; its pillars sit on these colliders.
-	_model("res://models/gate_arch.glb", self, c)
-	for sx in [-1.0, 1.0]:
-		var sh := BoxShape3D.new()
-		sh.size = Vector3(0.7, 5.0, 0.7)
-		_static(sh, c + Vector3(1.95 * float(sx), 2.5, 0), LAYER_OBSTACLE)
 	var tm := TorusMesh.new()
-	tm.inner_radius = 1.9
-	tm.outer_radius = 2.35
-	tm.rings = 48
-	tm.ring_segments = 12
-	gate_ring = _mesh(self, tm, gold, c + Vector3(0, 8.9, 0), Vector3(PI / 2.0, 0, 0))
+	tm.inner_radius = 2.62
+	tm.outer_radius = 2.8
+	tm.rings = 64
+	tm.ring_segments = 8
+	gate_ring = _mesh(self, tm, gold, c + Vector3(0, 3.55, 0))
+	gate_ring.basis = basis * Basis(Vector3.RIGHT, PI / 2.0)
 	gate_mat = _shader_mat(PORTAL_SHADER)
 	var q := QuadMesh.new()
-	q.size = Vector2(3.1, 5.8)
-	_mesh(self, q, gate_mat, c + Vector3(0, 0.4 + 2.9, 0))
+	q.size = Vector2(5.4, 5.4)
+	var disc := _mesh(self, q, gate_mat, c + Vector3(0, 3.55, 0))
+	disc.basis = basis
+	disc.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	gate_light = OmniLight3D.new()
 	gate_light.light_color = Color(1.0, 0.75, 0.4)
-	gate_light.light_energy = 0.6
-	gate_light.omni_range = 12.0
-	gate_light.position = c + Vector3(0, 3.0, 0)
+	gate_light.light_energy = 3.0
+	gate_light.omni_range = 16.0
+	gate_light.position = c + Vector3(0, 3.5, 0) + dir * 1.0
 	add_child(gate_light)
-	obstacles.append([Vector2(c.x, c.z), 3.4])
-	# A faint pillar of light over the gate: you can always see where the way out is.
+	obstacles.append([Vector2(c.x, c.z), 6.0])
+	# A faint pillar of light over the portal: you can always see where the way out is.
 	var cm := CylinderMesh.new()
 	cm.top_radius = 2.5
 	cm.bottom_radius = 0.9
@@ -1154,12 +1195,220 @@ func _build_gate() -> void:
 	beacon_mat.albedo_color = Color(1.0, 0.75, 0.4, 0.07)
 	var beam := _mesh(self, cm, beacon_mat, c + Vector3(0, 138.0, 0))
 	beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	# Colonnade around the gate.
-	for k in 10:
-		var a := TAU * float(k) / 10.0 + 0.15
-		if _bridge_clearance(GATE_ISLAND, a) < 22.0:
+	# Colonnade round the isle, outside the ring of fire.
+	for k in 12:
+		var a := TAU * float(k) / 12.0 + 0.15
+		if _bridge_clearance(GATE_ISLAND, a) < 20.0:
 			continue
-		_column(c + Vector3(cos(a) * 8.5, 0, sin(a) * 8.5), 3.8, true)
+		_column(c + Vector3(cos(a) * 9.8, 0, sin(a) * 9.8), 3.8, true)
+	gate_open = true
+	gate_mat.set_shader_parameter("open", 1.0)
+
+
+func _set_surface_mat(n: Node, key: String, m: Material) -> void:
+	if n is MeshInstance3D:
+		var mi: MeshInstance3D = n
+		for i in mi.mesh.get_surface_count():
+			var src: Material = mi.mesh.surface_get_material(i)
+			var nm: String = (src.resource_name if src else mi.mesh.surface_get_name(i)).to_lower()
+			if nm.begins_with(key):
+				mi.set_surface_override_material(i, m)
+	for ch in n.get_children():
+		_set_surface_mat(ch, key, m)
+
+
+var _scorched: ShaderMaterial
+func _scorched_mat() -> ShaderMaterial:
+	if _scorched == null:
+		_scorched = _terrain("tex_paving_scorched", "tex_rock_dark", 0.4, 0.3, Color(1.0, 0.95, 0.9), Color(0.7, 0.6, 0.55), 0.0, 0.3)
+	return _scorched
+
+
+func _first_mesh(n: Node) -> MeshInstance3D:
+	if n is MeshInstance3D:
+		return n
+	for ch in n.get_children():
+		var m := _first_mesh(ch)
+		if m:
+			return m
+	return null
+
+
+## The Hidden Garden: a ring of old walls with arched gateways where the stepping stones
+## arrive. Inside, hedges, roses and the Sky Fruit tree, with the Thornback asleep under it.
+func _build_garden() -> void:
+	var i := GARDEN_ISLAND
+	var c := island_center(i)
+	garden_center = c
+	var r := island_radius(i)
+	var rw := r - GARDEN_WALL_INSET
+	var gates: Array = bridge_angles.get(i, [])
+	var n := int(round(TAU * rw / 4.0))
+	var step := TAU / float(n)
+	var a0: float = float(gates[0]) if not gates.is_empty() else 0.0
+	var hedge_mat := _photo_mat("tex_hedge", 1.1, 0.85, Color(0.75, 0.9, 0.7))
+	for k in n:
+		var a := a0 + step * float(k)
+		var is_gate := false
+		for g in gates:
+			if absf(angle_difference(a, float(g))) < step * 0.55:
+				is_gate = true
+		var radial := Vector3(cos(a), 0, sin(a))
+		var tangent := Vector3(-sin(a), 0, cos(a))
+		var p := c + radial * rw
+		var rot := Vector3(0, -(a + PI / 2.0), 0)
+		if is_gate:
+			_model("res://models/wall_gate.glb", self, p, rot)
+			garden_gates.append(p)
+			for sx in [-1.0, 1.0]:
+				var sh := BoxShape3D.new()
+				sh.size = Vector3(0.95, 4.2, 1.3)
+				var pp: Vector3 = p + tangent * 1.85 * float(sx)
+				_static(sh, pp + Vector3(0, 2.1, 0), LAYER_OBSTACLE, rot)
+				obstacles.append([Vector2(pp.x, pp.z), 0.9])
+			_lamp(p + radial * 1.4 + tangent * 2.6)
+		else:
+			_model("res://models/wall_seg.glb", self, p, rot)
+			var sh := BoxShape3D.new()
+			sh.size = Vector3(4.1, 3.7, 0.85)
+			_static(sh, p + Vector3(0, 1.85, 0), LAYER_OBSTACLE, rot)
+			obstacles.append([Vector2(p.x, p.z), 2.2])
+			# Ivy and roses down both faces.
+			for side in [1.0, -1.0]:
+				for v in 2:
+					var off: float = randf_range(-1.6, 1.6)
+					_add_vine(p + radial * 0.46 * float(side) + tangent * off + Vector3(0, 3.45, 0), a if side > 0.0 else a + PI, randf_range(0.9, 1.4), randf_range(1.6, 3.3))
+	# The Sky Fruit tree in the middle.
+	tree_pos = c
+	_model("res://models/tree_leaves_0.glb", self, tree_pos, Vector3(0, 0.6, 0), Vector3.ONE * 2.3)
+	var tsh := CylinderShape3D.new()
+	tsh.radius = 0.75
+	tsh.height = 5.0
+	_static(tsh, tree_pos + Vector3(0, 2.5, 0), LAYER_OBSTACLE)
+	obstacles.append([Vector2(tree_pos.x, tree_pos.z), 2.0])
+	for k in 9:
+		var fa := TAU * float(k) / 9.0 + randf_range(-0.2, 0.2)
+		var fr := randf_range(1.4, 2.9)
+		var fp := tree_pos + Vector3(cos(fa) * fr, randf_range(3.6, 5.6), sin(fa) * fr)
+		var sm := SphereMesh.new()
+		sm.radius = 0.2
+		sm.height = 0.4
+		var fm := _mesh(self, sm, fruit_mat, fp)
+		fm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var fl: OmniLight3D = null
+		if k % 3 == 0:
+			fl = OmniLight3D.new()
+			fl.light_color = Color(1.0, 0.7, 0.3)
+			fl.light_energy = 0.8
+			fl.omni_range = 4.0
+			fl.position = fp
+			add_child(fl)
+		fruit_lights.append([fm, fl])
+	# Low clipped hedges in a broken ring round the tree (gaps toward the gateways).
+	var hr := 7.6
+	for k in 12:
+		var a := a0 + TAU * (float(k) + 0.5) / 12.0
+		var gap := false
+		for g in gates:
+			if absf(angle_difference(a, float(g))) < 0.4:
+				gap = true
+		if gap or k % 4 == 1:
+			continue
+		var hp := c + Vector3(cos(a), 0, sin(a)) * hr
+		var bm := BoxMesh.new()
+		bm.size = Vector3(3.3, 0.95, 0.75)
+		_mesh(self, bm, hedge_mat, hp + Vector3(0, 0.47, 0), Vector3(0, -(a + PI / 2.0), 0))
+		var hs := BoxShape3D.new()
+		hs.size = bm.size
+		_static(hs, hp + Vector3(0, 0.47, 0), LAYER_OBSTACLE, Vector3(0, -(a + PI / 2.0), 0))
+		obstacles.append([Vector2(hp.x, hp.z), 1.7])
+	# Small blossom trees between the wall and the hedges.
+	for k in 4:
+		var a := a0 + TAU * (float(k) + 0.5) / 4.0
+		var tp := c + Vector3(cos(a), 0, sin(a)) * 10.0
+		if is_clear(tp, 1.5):
+			make_tree(self, tp, 0.8, true)
+
+
+## The Crystal Cave: a basalt dome on its island with the doorway facing the bridges.
+## Inside, glowing crystals and the altar where the Moon Potion brews.
+func _build_cave() -> void:
+	var i := CAVE_ISLAND
+	var c := island_center(i)
+	var v := Vector2.ZERO
+	for a in bridge_angles.get(i, []):
+		v += Vector2(cos(float(a)), sin(float(a)))
+	var door_a := atan2(v.y, v.x)
+	cave_dir = Vector3(cos(door_a), 0, sin(door_a))
+	cave_center = c - cave_dir * CAVE_OFFSET
+	cave_door = cave_center + cave_dir * (CAVE_R + 1.0)
+	var shell := _model("res://models/cave_shell.glb", self, cave_center, Vector3(0, -door_a, 0))
+	var mi := _first_mesh(shell)
+	if mi:
+		var body := StaticBody3D.new()
+		body.collision_layer = LAYER_OBSTACLE
+		body.collision_mask = 0
+		var cs := CollisionShape3D.new()
+		cs.shape = mi.mesh.create_trimesh_shape()
+		body.add_child(cs)
+		nav_region.add_child(body)
+		body.global_transform = mi.global_transform
+	# Keep spawns out of the thick walls.
+	for k in 28:
+		var a := TAU * float(k) / 28.0
+		if absf(angle_difference(a, door_a)) < 0.3:
+			continue
+		var wp := cave_center + Vector3(cos(a), 0, sin(a)) * (CAVE_R - 0.7)
+		obstacles.append([Vector2(wp.x, wp.z), 1.3])
+	_model("res://models/altar.glb", self, cave_center, Vector3(0, randf() * TAU, 0))
+	var ash := CylinderShape3D.new()
+	ash.radius = 1.15
+	ash.height = 1.05
+	_static(ash, cave_center + Vector3(0, 0.52, 0), LAYER_OBSTACLE)
+	obstacles.append([Vector2(cave_center.x, cave_center.z), 1.9])
+	altar_pos = cave_center + Vector3(0, 1.08, 0)
+	var placed := 0
+	for k in 40:
+		if placed >= 11:
+			break
+		var a := randf() * TAU
+		if absf(angle_difference(a, door_a)) < 0.75:
+			continue
+		var cr := randf_range(5.6, 6.9)
+		var cp := cave_center + Vector3(cos(a), 0, sin(a)) * cr
+		var s := randf_range(0.9, 1.8)
+		_model("res://models/crystal_%d.glb" % (randi() % 3), self, cp, Vector3(randf_range(-0.2, 0.2), randf() * TAU, randf_range(-0.2, 0.2)), Vector3.ONE * s)
+		obstacles.append([Vector2(cp.x, cp.z), 1.0 * s])
+		var csh := CylinderShape3D.new()
+		csh.radius = 0.45 * s
+		csh.height = 1.6 * s
+		_static(csh, cp + Vector3(0, 0.8 * s, 0), LAYER_OBSTACLE)
+		if placed % 3 == 0:
+			var l := OmniLight3D.new()
+			l.light_color = Color(0.65, 0.35, 1.0) if placed % 2 == 0 else Color(0.3, 0.9, 1.0)
+			l.light_energy = 1.4
+			l.omni_range = 7.5
+			l.position = cp + Vector3(0, 1.4, 0) - Vector3(cos(a), 0, sin(a)) * 1.0
+			add_child(l)
+		placed += 1
+	var al := OmniLight3D.new()
+	al.light_color = Color(0.7, 0.4, 1.0)
+	al.light_energy = 1.8
+	al.omni_range = 6.0
+	al.position = altar_pos + Vector3(0, 1.2, 0)
+	add_child(al)
+	# A crystal either side of the doorway, so you can find it from afar.
+	for sx in [-1.0, 1.0]:
+		var side := Vector3(-cave_dir.z, 0, cave_dir.x) * 2.9 * float(sx)
+		_model("res://models/crystal_1.glb", self, cave_door + side - cave_dir * 0.6, Vector3(0, randf() * TAU, 0), Vector3.ONE * 1.3)
+
+
+func in_cave(p: Vector3, pad := 0.0) -> bool:
+	return Vector2(p.x - cave_center.x, p.z - cave_center.z).length() < CAVE_R + pad and absf(p.y - cave_center.y) < 6.0
+
+
+func in_garden(p: Vector3) -> bool:
+	return Vector2(p.x - garden_center.x, p.z - garden_center.z).length() < island_radius(GARDEN_ISLAND) - GARDEN_WALL_INSET and absf(p.y - garden_center.y) < 4.0
 
 
 func _build_shrines() -> void:
@@ -1336,16 +1585,11 @@ func _build_island_features() -> void:
 		var p = island_point(2, 2.0, 2.0)
 		if p != null:
 			_column(p, randf_range(1.0, 3.0), false)
-	# Mirror Pond.
-	pond_pos = island_center(3) + Vector3(-4.0, 0, 3.0)
-	_pond(pond_pos, POND_RADIUS)
-	_trees_on(3, 4)
-	# Bell Ruins.
-	for k in 8:
-		var p = island_point(4, 1.8, 1.8)
-		if p != null:
-			_column(p, randf_range(1.0, 4.2), randf() < 0.4)
-	_trees_on(4, 2)
+	# Crystal Cave: a few broken columns in the yard outside the doorway.
+	for k in 3:
+		var p = island_point(CAVE_ISLAND, 1.8, 1.8)
+		if p != null and not in_cave(p, 1.5):
+			_column(p, randf_range(1.0, 3.2), true)
 	# Heart Rock: two amber spires either side of the path.
 	var hc := island_center(HEART_ISLAND)
 	_amber_cluster(hc + Vector3(4.0, 0, 0))
@@ -1365,9 +1609,6 @@ func _build_waterfalls() -> void:
 			var best_s := -1.0
 			for attempt in 40:
 				var a := randf() * TAU
-				if i == 3:
-					# Mirror Pond's pond spills over the nearest edge.
-					a = atan2(pond_pos.z - c.z, pond_pos.x - c.x) + randf_range(-0.25, 0.25)
 				var s := _bridge_clearance(i, a)
 				for pa in placed:
 					s = minf(s, absf(rad_to_deg(angle_difference(a, float(pa)))))
@@ -1407,7 +1648,7 @@ func _waterfall(i: int, a: float) -> void:
 		var pool_c := c + dir * (r - 3.4)
 		_pond(pool_c, 1.5)
 	var stream := PlaneMesh.new()
-	stream.size = Vector2(1.4, 2.4 if i != 3 else maxf(0.5, r - 0.2 - (pond_pos - c).length() - POND_RADIUS))
+	stream.size = Vector2(1.4, 2.4)
 	var slen: float = stream.size.y
 	var smi := _mesh(root, stream, _water, Vector3(0, 0.07, -slen * 0.5))
 	smi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -1557,7 +1798,9 @@ func _build_grass() -> void:
 			var p := c + Vector3(cos(a) * rr, 0, sin(a) * rr)
 			if _in_pool(p, 0.4):
 				continue
-			if i == GATE_ISLAND and rr < 3.8:
+			if i == GATE_ISLAND and rr < 5.6:
+				continue
+			if i == CAVE_ISLAND and in_cave(p, 0.3):
 				continue
 			var s := randf_range(0.6, 1.15)
 			var b := Basis(Vector3.UP, randf() * TAU).scaled(Vector3(s, s * randf_range(0.7, 1.2), s))
@@ -1590,7 +1833,7 @@ func _build_flowers() -> void:
 				continue
 			for f in randi_range(3, 7):
 				var p: Vector3 = center + Vector3(randf_range(-1.8, 1.8), 0, randf_range(-1.8, 1.8))
-				if island_at(p) != i or _in_pool(p, 0.2):
+				if island_at(p) != i or _in_pool(p, 0.2) or (i == CAVE_ISLAND and in_cave(p, 0.3)) or (i == GATE_ISLAND and Vector2(p.x - gate_pos.x, p.z - gate_pos.z).length() < 5.6):
 					continue
 				var s := randf_range(0.7, 1.2)
 				_flower_xf.append(Transform3D(Basis(Vector3.UP, randf() * TAU).scaled(Vector3.ONE * s), p))
